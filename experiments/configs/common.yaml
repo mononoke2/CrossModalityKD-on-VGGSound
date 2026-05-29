@@ -1,0 +1,41 @@
+dataset:
+  name: vggsound
+  root: data/vggsound
+  num_classes: 25  # Subset selezionato di 25 classi uniformemente popolate
+  selected_classes: [
+    "ambulance siren",
+    "basketball bounce",
+    "bird chirping, tweeting",
+    "chainsawing trees",
+    "chicken crowing",
+    "driving motorcycle",
+    "engine accelerating, revving, vroom",
+    "female singing",
+    "fireworks banging",
+    "helicopter",
+    "male speech, man speaking",
+    "orchestra",
+    "people booing",
+    "playing acoustic guitar",
+    "playing banjo",
+    "playing cello",
+    "playing cymbal",
+    "playing drum kit",
+    "playing flute",
+    "playing harp",
+    "playing piano",
+    "playing saxophone",
+    "playing violin, fiddle",
+    "toilet flushing",
+    "vehicle horn, car horn, honking"
+  ]
+  sample_rate: 16000
+  n_mels: 128
+  target_length: 1024  # Lunghezza target per AST (~10 secondi di audio a 16kHz con hop_length=160 e window_length=400)
+  frame_size: 224      # Risoluzione spaziale per ResNet-50
+
+training:
+  seed: 42
+  num_workers: 4
+  mixed_precision: true
+  gradient_accumulation_steps: 1  # Da aumentare su GPU con minore VRAM

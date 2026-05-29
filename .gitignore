@@ -14,3 +14,6 @@ experiments/checkpoints/
 *.log
 
 .DS_Store
+
+*.csv
+vggsound.csv

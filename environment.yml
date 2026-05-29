@@ -10,6 +10,7 @@ dependencies:
   - torchvision
   - torchaudio
   - pytorch-cuda=11.8 # Modificare a seconda del target
+  - ffmpeg
   # Add other conda packages here
   - pip:
       - numpy
@@ -19,4 +20,9 @@ dependencies:
       - pyyaml
       - tensorboard
       - tqdm
+      - timm
+      - librosa
+      - soundfile
+      - einops
+      - wandb
       # Add other pip-only packages here
