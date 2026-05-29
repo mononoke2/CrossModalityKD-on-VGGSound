@@ -25,4 +25,5 @@ dependencies:
       - soundfile
       - einops
       - wandb
+      - yt-dlp
       # Add other pip-only packages here
