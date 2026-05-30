@@ -7,9 +7,13 @@
 # codice. Utile per ispezionare risultati, generare grafici o scrivere il report
 # in locale.
 #
-# Prerequisito: alias SSH "gcluster" con accesso passwordless. Override via env:
-#   REMOTE_HOST   host/alias ssh           (default: gcluster)
-#   REMOTE_DIR    path progetto sul cluster (default: dl26-projects)
+# Prerequisito: alias SSH 'gcluster' in ~/.ssh/config oppure impostazione della
+# variabile d'ambiente CLUSTER_USER con il proprio username di ateneo (codice fiscale).
+#
+# Variabili d'ambiente configurabili:
+#   CLUSTER_USER  username del cluster     (es. CLUSTER_USER=codicefiscale)
+#   REMOTE_HOST   host/alias ssh alternativo (default: autodetect alias 'gcluster')
+#   REMOTE_DIR    path progetto sul cluster  (default: dl26-projects)
 #
 # Uso:
 #   ./scripts/sync_from_cluster.sh                 # scarica tutti gli artefatti
@@ -21,7 +25,29 @@
 #
 set -euo pipefail
 
-REMOTE_HOST="${REMOTE_HOST:-gcluster}"
+# Determinazione dinamica e generale di REMOTE_HOST
+if [ -n "${REMOTE_HOST:-}" ]; then
+  # Se impostato esplicitamente via env, usiamo quello
+  :
+elif [ -n "${CLUSTER_USER:-}" ]; then
+  # Se è specificato l'username del cluster, costruiamo l'host reale
+  REMOTE_HOST="${CLUSTER_USER}@gcluster.dmi.unict.it"
+else
+  # Controlliamo se l'alias 'gcluster' è configurato in ~/.ssh/config
+  # 'ssh -G gcluster' restituisce la configurazione espansa. Se l'alias esiste,
+  # l'hostname conterrà 'gcluster.dmi.unict.it'.
+  if ssh -G gcluster 2>/dev/null | grep -qi '^hostname gcluster.dmi.unict.it'; then
+    REMOTE_HOST="gcluster"
+  else
+    echo "Errore: l'alias SSH 'gcluster' non è configurato e la variabile CLUSTER_USER non è definita." >&2
+    echo "Poiché non hai un file ~/.ssh/config, specifica il tuo username del cluster (codice fiscale)." >&2
+    echo "Esempio d'uso:" >&2
+    echo "  CLUSTER_USER=il_tuo_codice_fiscale $0 [opzioni]" >&2
+    echo "Oppure configura un alias SSH 'gcluster' in ~/.ssh/config." >&2
+    exit 1
+  fi
+fi
+
 REMOTE_DIR="${REMOTE_DIR:-dl26-projects}"
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
