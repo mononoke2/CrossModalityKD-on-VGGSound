@@ -40,7 +40,7 @@ def filter_dataset(csv_path, selected_classes, output_csv_path):
     print(f"Subset CSV salvato in: {output_csv_path} ({len(filtered_rows)} clip totali)")
     return [{"youtube_id": r[0], "start_seconds": r[1], "label": r[2], "split": r[3]} for r in filtered_rows]
 
-def download_and_process_clip(row, audio_dir, video_frame_dir):
+def download_and_process_clip(row, audio_dir, video_frame_dir, failed_dir):
     yt_id = row["youtube_id"]
     start_sec = int(row["start_seconds"])
     label = row["label"]
@@ -49,8 +49,13 @@ def download_and_process_clip(row, audio_dir, video_frame_dir):
     base_name = f"{yt_id}_{start_sec}"
     audio_path = os.path.join(audio_dir, f"{base_name}.wav")
     frame_path = os.path.join(video_frame_dir, f"{base_name}.jpg")
+    failed_path = os.path.join(failed_dir, f"{base_name}.failed")
     
-    # Controllo se entrambi i file sono già stati scaricati ed elaborati (resume capability)
+    # 1. Controllo se la clip è già segnata come fallita
+    if os.path.exists(failed_path):
+        return False, "Already marked as failed"
+        
+    # 2. Controllo se entrambi i file sono già stati scaricati ed elaborati (resume capability)
     if os.path.exists(audio_path) and os.path.exists(frame_path):
         return True, "Already downloaded"
         
@@ -58,7 +63,6 @@ def download_and_process_clip(row, audio_dir, video_frame_dir):
     
     try:
         # 1. Recupero degli URL dei flussi diretti tramite yt-dlp
-        # Utilizziamo -g per stampare l'URL diretto senza scaricare il file intero
         cmd_ytdl = [
             "yt-dlp",
             "-g",
@@ -70,9 +74,8 @@ def download_and_process_clip(row, audio_dir, video_frame_dir):
         urls = result.stdout.strip().split('\n')
         
         if len(urls) < 1:
-            return False, "Failed to retrieve stream URLs"
+            raise Exception("Failed to retrieve stream URLs")
             
-        # Assegnazione flussi video e audio
         video_url = urls[0]
         audio_url = urls[1] if len(urls) > 1 else urls[0]
         
@@ -108,24 +111,39 @@ def download_and_process_clip(row, audio_dir, video_frame_dir):
         return True, "Success"
         
     except subprocess.CalledProcessError as e:
+        stderr_content = e.stderr if e.stderr else ""
+        # RILEVAMENTO BLOCCO DI SICUREZZA YOUTUBE (HTTP 429)
+        if "429" in stderr_content or "Too Many Requests" in stderr_content:
+            print("\n\n[CRITICAL ERROR] Rilevato blocco di sicurezza YouTube (HTTP Error 429: Too Many Requests).")
+            print("Per prevenire la marcatura di falsi fallimenti, il processo viene arrestato immediatamente.")
+            print("Consiglio: cambia la tua connessione (es. VPN, hotspot) o attendi prima di riprovare.\n")
+            os._exit(429) # Terminazione immediata e pulita di tutti i thread concorrenti
+            
         # Pulisce i file parziali se creati
         if os.path.exists(audio_path):
             os.remove(audio_path)
         if os.path.exists(frame_path):
             os.remove(frame_path)
+        # Salva il file segnaposto per indicare il fallimento stabile
+        with open(failed_path, 'w') as f:
+            f.write(f"Subprocess error: {str(e)}\nStderr: {stderr_content}")
         return False, f"Subprocess error: {str(e)}"
     except Exception as e:
         if os.path.exists(audio_path):
             os.remove(audio_path)
         if os.path.exists(frame_path):
             os.remove(frame_path)
+        # Salva il file segnaposto per indicare il fallimento stabile
+        with open(failed_path, 'w') as f:
+            f.write(f"Unexpected error: {str(e)}")
         return False, f"Unexpected error: {str(e)}"
 
 def main():
     parser = argparse.ArgumentParser(description="Download e Preprocessing del subset VGGSound")
-    parser.add_argument("--csv", type=str, default="vggsound.csv", help="Percorso al file vggsound.csv completo")
+    parser.add_argument("--csv", type=str, default="data/vggsound.csv", help="Percorso al file vggsound.csv completo")
     parser.add_argument("--config", type=str, default="experiments/configs/common.yaml", help="Percorso al config common.yaml")
     parser.add_argument("--workers", type=str, default="4", help="Numero di thread concorrenti per il download")
+    parser.add_argument("--recovery-up-to", type=int, default=0, help="Indice fino a cui marcare le clip mancanti come fallite per recupero rapido")
     args = parser.parse_args()
     
     config = load_config(args.config)
@@ -136,9 +154,11 @@ def main():
     subset_csv_path = os.path.join(root_dir, "subset.csv")
     audio_dir = os.path.join(root_dir, "audio")
     video_frame_dir = os.path.join(root_dir, "video_frames")
+    failed_dir = os.path.join(root_dir, "failed")
     
     os.makedirs(audio_dir, exist_ok=True)
     os.makedirs(video_frame_dir, exist_ok=True)
+    os.makedirs(failed_dir, exist_ok=True)
     
     # 1. Filtriamo il dataset se il file subset.csv non esiste ancora
     if not os.path.exists(subset_csv_path):
@@ -151,6 +171,25 @@ def main():
             for row in reader:
                 rows.append(row)
                 
+    # 2. Gestione Fast Recovery per i fallimenti della run precedente
+    if args.recovery_up_to > 0:
+        print(f"Avvio del Fast Recovery fino all'indice {args.recovery_up_to}...")
+        recovery_count = 0
+        limit = min(args.recovery_up_to, len(rows))
+        for i in range(limit):
+            row = rows[i]
+            base_name = f"{row['youtube_id']}_{int(row['start_seconds'])}"
+            audio_path = os.path.join(audio_dir, f"{base_name}.wav")
+            frame_path = os.path.join(video_frame_dir, f"{base_name}.jpg")
+            failed_path = os.path.join(failed_dir, f"{base_name}.failed")
+            
+            # Se la clip non è stata scaricata con successo, la marchiamo come fallita
+            if not (os.path.exists(audio_path) and os.path.exists(frame_path)) and not os.path.exists(failed_path):
+                with open(failed_path, 'w') as f:
+                    f.write("Marked as failed during recovery of previous run")
+                recovery_count += 1
+        print(f"Fast Recovery completato. Creati {recovery_count} file segnaposto per le clip fallite.")
+                
     print(f"Inizio download delle clip ({len(rows)} totali)...")
     
     success_count = 0
@@ -160,10 +199,9 @@ def main():
     workers = int(args.workers)
     print(f"Utilizzo di {workers} worker concorrenti per il download.")
     
-    # Esecuzione con o senza tqdm
     with ThreadPoolExecutor(max_workers=workers) as executor:
         futures = [
-            executor.submit(download_and_process_clip, row, audio_dir, video_frame_dir) 
+            executor.submit(download_and_process_clip, row, audio_dir, video_frame_dir, failed_dir) 
             for row in rows
         ]
         for future in tqdm(futures, desc="Downloading", total=len(futures)):
