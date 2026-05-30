@@ -7,18 +7,6 @@ classi selezionate) e restituisce, a seconda della modalità:
 - ``"video"``  -> ``(frame_image, label)``             input per il teacher ResNet-50
 - ``"both"``   -> ``(mel_spectrogram, frame_image, label)``  per la distillation
 
-Punti chiave (vedi implementation_plan.md / EXPERIMENT_LOG.md):
-
-- **Split onesto**: il CSV originale definisce solo ``train``/``test``. Da
-  ``train`` ricaviamo un validation set con uno split **stratificato per classe**
-  (default 85% train / 15% val), deterministico tramite ``seed``. Lo split
-  ``test`` resta **blindato** per la valutazione finale.
-- **Robustezza al link-rot**: alcune clip possono non essere state scaricate
-  (YouTube non più disponibile). Le righe i cui file richiesti non esistono
-  vengono scartate (``require_files=True``).
-- **Config-driven**: parametri audio/immagine letti da ``common.yaml`` (o da un
-  dict passato direttamente).
-
 Layout file atteso (prodotto da ``download_vggsound.py``)::
 
     data/vggsound/subset.csv                 # header: youtube_id,start_seconds,label,split
