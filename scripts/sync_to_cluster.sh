@@ -14,10 +14,14 @@
 #   REMOTE_DIR    path progetto sul cluster (default: dl26-projects)
 #
 # Uso:
-#   ./scripts/sync_to_cluster.sh            # sincronizza
+#   ./scripts/sync_to_cluster.sh            # sincronizza SOLO il codice (data/ escluso)
 #   ./scripts/sync_to_cluster.sh -n         # dry-run (mostra cosa farebbe)
+#   ./scripts/sync_to_cluster.sh --data     # include anche data/ (carica il dataset sul cluster)
 #   ./scripts/sync_to_cluster.sh --delete   # rimuove sul cluster i file non piu presenti in locale
 #   REMOTE_DIR=other ./scripts/sync_to_cluster.sh
+#
+# Nota: il cluster DMI non ha internet in uscita, quindi il dataset va scaricato
+# in locale e poi caricato qui con --data (rsync e' resumable: utile per i ~65GB).
 #
 set -euo pipefail
 
@@ -31,10 +35,12 @@ PROJECT_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 # Flag opzionali.
 DRY_RUN=""
 DELETE=""
+WITH_DATA=""
 for arg in "$@"; do
   case "$arg" in
     -n|--dry-run) DRY_RUN="--dry-run" ;;
     --delete)     DELETE="--delete" ;;
+    --data)       WITH_DATA=1 ;;
     -h|--help)
       grep '^#' "$0" | sed 's/^# \{0,1\}//'
       exit 0 ;;
@@ -53,14 +59,20 @@ EXCLUDES=(
   --exclude '*.pyc'
   --exclude '.ipynb_checkpoints/'
   --exclude '.DS_Store'
-  --exclude 'data/'                      # dataset (gestito separatamente / già sul cluster)
   --exclude 'experiments/checkpoints/'   # output del training
   --exclude 'experiments/logs/'          # log/tensorboard
   --exclude 'figures/'                   # grafici generati
   --exclude 'wandb/'
 )
+# data/ è escluso di default; con --data lo includiamo per caricare il dataset.
+if [ -z "$WITH_DATA" ]; then
+  EXCLUDES+=(--exclude 'data/')
+fi
 
-echo ">> Deploy codice: ${PROJECT_ROOT}/  ->  ${REMOTE_HOST}:${REMOTE_DIR}/"
+SCOPE="codice"
+[ -n "$WITH_DATA" ] && SCOPE="codice + data"
+echo ">> Deploy ${SCOPE}: ${PROJECT_ROOT}/  ->  ${REMOTE_HOST}:${REMOTE_DIR}/"
+[ -n "$WITH_DATA" ] && echo ">> --data attivo: verrà caricata anche la cartella data/ (può essere molto pesante)."
 [ -n "$DRY_RUN" ] && echo ">> DRY-RUN: nessuna modifica verrà applicata."
 [ -n "$DELETE" ]  && echo ">> DELETE attivo: i file rimossi in locale verranno rimossi anche sul cluster."
 
