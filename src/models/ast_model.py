@@ -206,13 +206,39 @@ class AudioSpectrogramTransformer(nn.Module):
     def forward_features(self, x: torch.Tensor) -> torch.Tensor:
         """Restituisce l'embedding CLS (prima del classification head).
 
+        Bypassa ``_process_input()`` di torchvision che contiene un'assert
+        hardcoded ``h == 224``, non compatibile con il nostro input 128×1024.
+        Reimplementa il forward utilizzando direttamente i sottomoduli del backbone.
+
         Args:
             x: Mel-spectrogram ``(B, 1, n_mels, target_length)``.
 
         Returns:
-            Embedding ``(B, 768)``.
+            Embedding CLS ``(B, 768)``.
         """
-        return self.backbone(x)  # backbone.heads = Identity → restituisce embedding CLS
+        n, c, h, w = x.shape
+        n_h = h // 16  # 128 // 16 = 8
+        n_w = w // 16  # 1024 // 16 = 64
+
+        # 1. Patch embedding: (B, 1, H, W) → (B, 768, n_h, n_w)
+        x = self.backbone.conv_proj(x)
+        # Flatten patches: (B, 768, n_h, n_w) → (B, n_h*n_w, 768)
+        x = x.reshape(n, self.embed_dim, n_h * n_w).permute(0, 2, 1)
+
+        # 2. Prepend CLS token: (B, 1+n_h*n_w, 768)
+        cls = self.backbone.class_token.expand(n, -1, -1)
+        x = torch.cat([cls, x], dim=1)
+
+        # 3. Positional embedding (già interpolato in __init__ a shape 1+512)
+        x = x + self.backbone.encoder.pos_embedding
+
+        # 4. Transformer encoder
+        x = self.backbone.encoder.dropout(x)
+        x = self.backbone.encoder.layers(x)
+        x = self.backbone.encoder.ln(x)
+
+        # 5. Ritorna solo il CLS token
+        return x[:, 0]  # (B, 768)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         """Forward completo: mel-spectrogram → logits.
