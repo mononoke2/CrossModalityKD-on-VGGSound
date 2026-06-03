@@ -188,9 +188,9 @@ def train_one_epoch(
         total_loss += loss.item() * gradient_accumulation_steps
 
         if (batch_idx + 1) % max(1, n_batches // 10) == 0:
-            logger.log(
-                f"  Epoch {epoch} [{batch_idx + 1}/{n_batches}]  "
-                f"Loss: {total_loss / (batch_idx + 1):.4f}"
+            logger.info(
+                "  Epoch %d [%d/%d]  Loss: %.4f",
+                epoch, batch_idx + 1, n_batches, total_loss / (batch_idx + 1),
             )
 
     return total_loss / n_batches
@@ -289,8 +289,7 @@ def main() -> None:
         use_wandb=False,
         config=cfg,
     )
-    logger.log(f"Config: {cfg}")
-    logger.log(f"Output dir: {output_dir}")
+    logger.info("Output dir: %s", output_dir)
 
     # -- Dataset e DataLoader -------------------------------------------
     common_ds_kwargs = dict(
@@ -301,7 +300,7 @@ def main() -> None:
     train_dataset = VGGSoundDataset(split="train", **common_ds_kwargs)
     val_dataset = VGGSoundDataset(split="val", **common_ds_kwargs)
 
-    logger.log(f"Train: {len(train_dataset)} campioni | Val: {len(val_dataset)} campioni")
+    logger.info("Train: %d campioni | Val: %d campioni", len(train_dataset), len(val_dataset))
 
     num_workers = int(train_cfg.get("num_workers", 4))
     batch_size = int(train_cfg.get("batch_size", 32))
@@ -324,7 +323,7 @@ def main() -> None:
 
     # -- Modello --------------------------------------------------------
     model = build_ast(cfg).to(device)
-    logger.log(str(model))
+    logger.info("%s", model)
 
     # -- Ottimizzatore e Scheduler --------------------------------------
     lr = float(train_cfg.get("lr", 1e-4))
@@ -373,7 +372,7 @@ def main() -> None:
     gradient_accumulation_steps = int(train_cfg.get("gradient_accumulation_steps", 1))
 
     # -- Training loop --------------------------------------------------
-    logger.log(f"Inizio training: {epochs} epoche, LR={lr}, batch={batch_size}, device={device}")
+    logger.info("Inizio training: %d epoche, LR=%s, batch=%d, device=%s", epochs, lr, batch_size, device)
     best_val_top1 = 0.0
 
     for epoch in range(start_epoch, epochs + 1):
@@ -400,11 +399,11 @@ def main() -> None:
         epoch_time = time.time() - epoch_start
         current_lr = optimizer.param_groups[0]["lr"]
 
-        logger.log(
-            f"Epoch {epoch}/{epochs} — "
-            f"train_loss={train_loss:.4f} | val_loss={val_loss:.4f} | "
-            f"val_top1={val_top1*100:.2f}% | val_top5={val_top5*100:.2f}% | "
-            f"LR={current_lr:.2e} | {epoch_time:.0f}s"
+        logger.info(
+            "Epoch %d/%d — train_loss=%.4f | val_loss=%.4f | "
+            "val_top1=%.2f%% | val_top5=%.2f%% | LR=%.2e | %.0fs",
+            epoch, epochs, train_loss, val_loss,
+            val_top1 * 100, val_top5 * 100, current_lr, epoch_time,
         )
 
         # Logging scalars per TensorBoard
@@ -437,16 +436,16 @@ def main() -> None:
         # Early stopping (salva automaticamente best.pth tramite EarlyStopping)
         early_stopping(val_top1, checkpoint_state)
         if early_stopping.should_stop:
-            logger.log(f"Early stopping attivato all'epoch {epoch}. Best val_top1: {best_val_top1*100:.2f}%")
+            logger.info("Early stopping attivato all'epoch %d. Best val_top1: %.2f%%", epoch, best_val_top1 * 100)
             break
 
         # Checkpoint d'emergenza da segnale SLURM
         if _CHECKPOINT_REQUESTED:
-            logger.log("[SLURM] Checkpoint d'emergenza salvato.")
+            logger.info("[SLURM] Checkpoint d'emergenza salvato.")
             _CHECKPOINT_REQUESTED = False
             save_checkpoint(checkpoint_state, output_dir, "emergency.pth")
 
-    logger.log(f"Training completato. Best val_top1: {best_val_top1 * 100:.2f}%")
+    logger.info("Training completato. Best val_top1: %.2f%%", best_val_top1 * 100)
     logger.close()
 
 
