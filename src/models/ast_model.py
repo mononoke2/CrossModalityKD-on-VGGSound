@@ -1,20 +1,29 @@
 """Audio Spectrogram Transformer (AST) per la classificazione audio.
 
-``AudioSpectrogramTransformer`` adatta un ViT pre-addestrato (via ``timm``)
-per accettare log-mel-spectrogram 2D estratti da audio a 16 kHz.  È il modello
-usato come:
+``AudioSpectrogramTransformer`` adatta un ViT-B/16 pre-addestrato da
+``torchvision.models`` (già disponibile nel container Apptainer del cluster)
+per accettare log-mel-spectrogram 2D estratti da audio a 16 kHz.
 
+È il modello usato come:
 - **Baseline audio** (Fase 1): addestrato con sola cross-entropy.
 - **Student distillato** (Fase 3): addestrato con DistillationLoss + CE.
 
 Il modello espone sia ``forward(x) → logits`` che ``forward_features(x) → embedding``
 per consentire la feature-level distillation nella Fase 3.
 
+Adattamenti rispetto al ViT-B/16 ImageNet-pretrained
+------------------------------------------------------
+1. **Patch embedding**: Conv2d(3→1, 16×16) — il canale singolo del
+   mel-spectrogram sostituisce i 3 canali RGB. I pesi ImageNet vengono
+   conservati mediando i 3 canali originali (standard practice in letteratura).
+2. **Positional embedding**: i pos-embed originali (196 patch per 14×14)
+   vengono interpolati bilinearmente per coprire la nuova griglia
+   8×64 = 512 patch (mel-spectrogram 128×1024 con patch 16×16).
+3. **Classification head**: sostituito con Linear(768 → num_classes).
+
 Riferimento architetturale
 --------------------------
 Gong et al., "AST: Audio Spectrogram Transformer", Interspeech 2021.
-Qui usiamo un ViT standard da ``timm`` e ne adattiamo i pos-embed anziché
-ripartire da zero, il che permette di riutilizzare i pesi ImageNet-pretrained.
 """
 
 from __future__ import annotations
@@ -23,39 +32,29 @@ import math
 
 import torch
 import torch.nn as nn
+from torchvision.models import vit_b_16, ViT_B_16_Weights
 
-try:
-    import timm
-    _TIMM_AVAILABLE = True
-except ImportError:
-    _TIMM_AVAILABLE = False
-
-
-# Dimensione di embedding usata dal backbone ViT-Base (16 teste × 64 = 768).
+# Dimensione embedding di ViT-Base (12 teste × 64 = 768).
 _VIT_BASE_EMBED_DIM = 768
 
 
 class AudioSpectrogramTransformer(nn.Module):
-    """ViT adattato per mel-spectrogram 2D (frequenza × tempo).
+    """ViT-B/16 adattato per mel-spectrogram 2D (frequenza × tempo).
 
     Args:
         num_classes: Numero di classi di output (es. 25 per il nostro subset).
-        backbone: Nome del modello ``timm`` da usare come backbone.
-            Default: ``"vit_base_patch16_224"`` (ViT-B/16 ImageNet-pretrained).
-        pretrained: Se ``True``, carica i pesi pre-addestrati dal repository
-            ``timm``. Richiede accesso internet al primo avvio (poi cache locale).
-        n_mels: Numero di bande Mel (asse frequenza). Deve corrispondere alla
-            config del dataloader (default 128).
-        target_length: Numero di frame temporali (asse tempo, default 1024).
-        drop_rate: Dropout sull'output del classification head.
-        freeze_backbone: Se ``True``, congela tutti i parametri tranne il head.
-            Utile per il warm-up iniziale.
+        pretrained: Se ``True``, carica i pesi ImageNet-pretrained di ViT-B/16
+            tramite torchvision. Richiede internet al primo avvio (poi cache).
+        n_mels: Numero di bande Mel (asse frequenza). Default 128.
+        target_length: Numero di frame temporali (asse tempo). Default 1024.
+        drop_rate: Dropout applicato prima del classification head.
+        freeze_backbone: Se ``True``, congela il backbone (solo il head è
+            trainable). Utile per warm-up iniziale o ablation study.
     """
 
     def __init__(
         self,
         num_classes: int = 25,
-        backbone: str = "vit_base_patch16_224",
         pretrained: bool = True,
         n_mels: int = 128,
         target_length: int = 1024,
@@ -64,46 +63,52 @@ class AudioSpectrogramTransformer(nn.Module):
     ) -> None:
         super().__init__()
 
-        if not _TIMM_AVAILABLE:
-            raise ImportError(
-                "timm non è installato. Esegui `pip install timm` o aggiungi "
-                "timm all'environment.yml e ricrea l'ambiente."
-            )
-
         self.num_classes = num_classes
         self.n_mels = n_mels
         self.target_length = target_length
-        self.embed_dim = _VIT_BASE_EMBED_DIM  # aggiornato sotto se il backbone è diverso
+        self.embed_dim = _VIT_BASE_EMBED_DIM
 
-        # Crea il backbone ViT senza testa di classificazione originale.
-        # num_classes=0 → timm restituisce le feature dopo il pool (embedding).
-        self.backbone = timm.create_model(
-            backbone,
-            pretrained=pretrained,
-            num_classes=0,       # rimuove il classifier originale
-            in_chans=1,          # log-mel-spectrogram ha 1 canale (no RGB)
-            drop_rate=drop_rate,
-        )
+        # ------------------------------------------------------------------
+        # 1. Carica backbone ViT-B/16 da torchvision
+        # ------------------------------------------------------------------
+        weights = ViT_B_16_Weights.IMAGENET1K_V1 if pretrained else None
+        vit = vit_b_16(weights=weights)
 
-        # Recupera la dimensione reale dell'embedding dal backbone.
-        self.embed_dim = self.backbone.num_features
+        # ------------------------------------------------------------------
+        # 2. Adatta il patch embedding: Conv2d(3, 768, 16, 16) → (1, 768, 16, 16)
+        #    I pesi pretrained vengono preservati sommando i 3 canali RGB e
+        #    dividendo per 3 (media), che è la strategia standard per input mono.
+        # ------------------------------------------------------------------
+        old_conv = vit.conv_proj  # Conv2d(3, 768, kernel_size=16, stride=16)
+        new_conv = nn.Conv2d(1, old_conv.out_channels, kernel_size=16, stride=16, bias=False)
+        if pretrained:
+            with torch.no_grad():
+                new_conv.weight.copy_(old_conv.weight.mean(dim=1, keepdim=True))
+        vit.conv_proj = new_conv
 
-        # Adatta il patch embedding e i positional embedding al nostro input:
-        # il ViT-B/16 si aspetta 224×224 con patch 16×16 → 14×14 = 196 patch.
-        # Il nostro mel-spectrogram è (1, 128, 1024) → con patch 16×16 abbiamo
-        # (128/16) × (1024/16) = 8 × 64 = 512 patch, molto più del default.
-        # Adattiamo i positional embed via interpolazione bilineare.
-        self._adapt_pos_embed(n_mels, target_length)
+        # ------------------------------------------------------------------
+        # 3. Interpola i positional embedding per la griglia 8×64 (512 patch)
+        #    I pos-embed originali hanno shape (1, 197, 768): 196 patch + CLS.
+        #    Il nostro input (1, 128, 1024) con patch 16×16 → 8×64 = 512 patch.
+        # ------------------------------------------------------------------
+        self._adapt_pos_embed(vit, n_mels, target_length)
 
-        # Nuovo classification head specifico per il nostro task.
+        # ------------------------------------------------------------------
+        # 4. Rimuovi il classification head di ImageNet (1000 classi) e salva
+        #    il backbone senza il layer finale.
+        #    torchvision.vit_b_16 ha: vit.heads.head = Linear(768, 1000)
+        # ------------------------------------------------------------------
+        vit.heads = nn.Identity()  # type: ignore[assignment]
+        self.backbone = vit
+
+        # ------------------------------------------------------------------
+        # 5. Nuovo classification head per il nostro task
+        # ------------------------------------------------------------------
         self.classifier = nn.Sequential(
             nn.LayerNorm(self.embed_dim),
             nn.Dropout(drop_rate),
             nn.Linear(self.embed_dim, num_classes),
         )
-
-        # Inizializziamo il layer lineare con scaling ridotto (buona pratica per
-        # evitare instabilità nei primi step di training).
         nn.init.trunc_normal_(self.classifier[-1].weight, std=0.02)
         nn.init.zeros_(self.classifier[-1].bias)
 
@@ -113,54 +118,48 @@ class AudioSpectrogramTransformer(nn.Module):
     # ------------------------------------------------------------------ #
     # Setup: adattamento positional embedding
     # ------------------------------------------------------------------ #
-    def _adapt_pos_embed(self, n_mels: int, target_length: int) -> None:
-        """Interpola i positional embedding 2D per adattarli alla nuova griglia di patch.
+    @staticmethod
+    def _adapt_pos_embed(vit: nn.Module, n_mels: int, target_length: int) -> None:
+        """Interpola i positional embedding per la nuova griglia di patch.
 
-        Il ViT-B/16 ha pos-embed shape ``(1, 196+1, 768)`` (196 patch + CLS).
-        Per il nostro input (128, 1024) con patch 16×16 otteniamo 8×64=512 patch
-        → pos-embed target: ``(1, 512+1, 768)``.
-
-        L'interpolazione è bilineare nello spazio 2D (freq × time).
+        torchvision ViT-B/16: ``encoder.pos_embedding`` shape (1, 197, 768).
+        197 = 196 patch (14×14) + 1 CLS token.
+        Nuovo: 512 patch (8×64) + 1 CLS token → shape (1, 513, 768).
         """
-        if not hasattr(self.backbone, 'pos_embed') or self.backbone.pos_embed is None:
-            return  # alcuni backbone non usano pos_embed fisso
+        pos_embed = vit.encoder.pos_embedding  # (1, 197, 768)
+        cls_pos = pos_embed[:, :1, :]           # (1, 1, 768) — CLS token
+        patch_pos = pos_embed[:, 1:, :]         # (1, 196, 768)
 
-        old_pos_embed = self.backbone.pos_embed  # (1, N+1, D)
-        cls_pos = old_pos_embed[:, :1, :]       # (1, 1, D) — CLS token
-        patch_pos = old_pos_embed[:, 1:, :]     # (1, N_old, D)
+        n_old = patch_pos.shape[1]              # 196
+        h_old = w_old = int(math.sqrt(n_old))  # 14 × 14
 
-        # Dimensioni originali (quadrate, ViT-B/16: 14×14=196)
-        n_old = patch_pos.shape[1]
-        h_old = w_old = int(math.sqrt(n_old))
-
-        # Nuove dimensioni patch per il nostro spettrogramma
         patch_size = 16
-        h_new = n_mels // patch_size          # 128//16 = 8
-        w_new = target_length // patch_size   # 1024//16 = 64
+        h_new = n_mels // patch_size            # 128 // 16 = 8
+        w_new = target_length // patch_size     # 1024 // 16 = 64
 
         if h_new * w_new == n_old:
-            return  # già compatibile, nessuna interpolazione necessaria
+            return  # già compatibile
 
-        # Riforma a griglia 2D e interpola
+        # Riforma a griglia 2D e interpola bilinearmente
         patch_pos = patch_pos.reshape(1, h_old, w_old, -1).permute(0, 3, 1, 2)  # (1, D, H, W)
         patch_pos = nn.functional.interpolate(
             patch_pos,
             size=(h_new, w_new),
             mode="bilinear",
             align_corners=False,
-        )  # (1, D, h_new, w_new)
-        patch_pos = patch_pos.permute(0, 2, 3, 1).reshape(1, h_new * w_new, -1)  # (1, N_new, D)
+        )
+        patch_pos = patch_pos.permute(0, 2, 3, 1).reshape(1, h_new * w_new, -1)  # (1, 512, 768)
 
-        new_pos_embed = torch.cat([cls_pos, patch_pos], dim=1)  # (1, N_new+1, D)
-        self.backbone.pos_embed = nn.Parameter(new_pos_embed)
+        new_pos_embed = torch.cat([cls_pos, patch_pos], dim=1)  # (1, 513, 768)
+        vit.encoder.pos_embedding = nn.Parameter(new_pos_embed)
 
     def _freeze_backbone(self) -> None:
-        """Congela tutti i parametri del backbone (solo il head rimane trainable)."""
+        """Congela tutti i parametri del backbone (solo il head è trainable)."""
         for param in self.backbone.parameters():
             param.requires_grad = False
 
     def unfreeze_backbone(self) -> None:
-        """Scongela il backbone per il fine-tuning completo."""
+        """Scongela il backbone per fine-tuning completo."""
         for param in self.backbone.parameters():
             param.requires_grad = True
 
@@ -168,15 +167,15 @@ class AudioSpectrogramTransformer(nn.Module):
     # Forward
     # ------------------------------------------------------------------ #
     def forward_features(self, x: torch.Tensor) -> torch.Tensor:
-        """Restituisce l'embedding globale prima del classification head.
+        """Restituisce l'embedding CLS (prima del classification head).
 
         Args:
             x: Mel-spectrogram ``(B, 1, n_mels, target_length)``.
 
         Returns:
-            Embedding ``(B, embed_dim)``.
+            Embedding ``(B, 768)``.
         """
-        return self.backbone(x)  # backbone ha num_classes=0 → restituisce features
+        return self.backbone(x)  # backbone.heads = Identity → restituisce embedding CLS
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         """Forward completo: mel-spectrogram → logits.
@@ -187,7 +186,7 @@ class AudioSpectrogramTransformer(nn.Module):
         Returns:
             Logits ``(B, num_classes)``.
         """
-        features = self.forward_features(x)   # (B, embed_dim)
+        features = self.forward_features(x)   # (B, 768)
         return self.classifier(features)      # (B, num_classes)
 
     def __repr__(self) -> str:
@@ -195,7 +194,7 @@ class AudioSpectrogramTransformer(nn.Module):
         trainable = sum(p.numel() for p in self.parameters() if p.requires_grad)
         return (
             f"AudioSpectrogramTransformer("
-            f"backbone={self.backbone.__class__.__name__}, "
+            f"backbone=ViT-B/16 (torchvision), "
             f"num_classes={self.num_classes}, "
             f"embed_dim={self.embed_dim}, "
             f"params_total={total:,}, params_trainable={trainable:,})"
@@ -205,9 +204,8 @@ class AudioSpectrogramTransformer(nn.Module):
 def build_ast(cfg: dict) -> AudioSpectrogramTransformer:
     """Factory: costruisce un AST da un dict di configurazione.
 
-    Il dict ``cfg`` dovrebbe contenere le chiavi ``model.*`` lette da
-    ``baseline_audio.yaml`` (o ``distillation.yaml``).  Le chiavi mancanti
-    usano i default di ``AudioSpectrogramTransformer.__init__``.
+    Legge le chiavi ``model.*`` e ``dataset.*`` dal dict caricato da YAML.
+    Le chiavi mancanti usano i default di ``AudioSpectrogramTransformer``.
 
     Esempio::
 
@@ -219,7 +217,6 @@ def build_ast(cfg: dict) -> AudioSpectrogramTransformer:
 
     return AudioSpectrogramTransformer(
         num_classes=int(ds_cfg.get("num_classes", 25)),
-        backbone=model_cfg.get("backbone", "vit_base_patch16_224"),
         pretrained=bool(model_cfg.get("pretrained", True)),
         n_mels=int(ds_cfg.get("n_mels", 128)),
         target_length=int(ds_cfg.get("target_length", 1024)),
@@ -230,7 +227,7 @@ def build_ast(cfg: dict) -> AudioSpectrogramTransformer:
 
 if __name__ == "__main__":
     # Quick smoke test: verifica le shape di input/output e l'interpolazione dei pos-embed.
-    print("Smoke test AudioSpectrogramTransformer...")
+    print("Smoke test AudioSpectrogramTransformer (torchvision backend)...")
     model = AudioSpectrogramTransformer(num_classes=25, pretrained=False)
     print(model)
 
