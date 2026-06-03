@@ -1,0 +1,21 @@
+extends: common.yaml
+
+model:
+  type: resnet50               # VisionTeacher — ResNet-50 (torchvision, ImageNet-pretrained)
+  pretrained: true            
+  weights_path: pretrained_weights/resnet50.pth  
+  freeze_until: layer2         # fine-tune di layer3, layer4 e fc; congela conv1/layer1/layer2
+  drop_rate: 0.0
+
+training:
+  batch_size: 64
+  epochs: 20
+  lr: 1e-3
+  momentum: 0.9                # SGD con momentum (+ Nesterov)
+  weight_decay: 5e-4
+  scheduler: step              # StepLR: decadimento dell'LR ogni step_size epoche
+  step_size: 7
+  gamma: 0.1
+  patience: 7                  
+  mixed_precision: true        # AMP FP16 (ignorato automaticamente su CPU)
+  gradient_accumulation_steps: 1  # aumentare su gpu-medium (5632 MB VRAM) se necessario
