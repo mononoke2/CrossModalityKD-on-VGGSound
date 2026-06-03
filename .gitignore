@@ -18,3 +18,5 @@ experiments/checkpoints/
 *.csv
 vggsound.csv
 /tools
+pretrained_weights/*.pth
+pretrained_weights/

@@ -1,0 +1,19 @@
+extends: common.yaml
+
+model:
+  type: ast                  # AudioSpectrogramTransformer — ViT-B/16 (torchvision, no timm)
+  pretrained: true           # carica i pesi ImageNet-pretrained di ViT-B/16
+  weights_path: pretrained_weights/vit_b_16.pth  # path locale (rsync-ato sul cluster)
+  drop_rate: 0.1
+  freeze_backbone: false  # true per warm-up nelle prime epoche, poi false
+
+training:
+  batch_size: 32
+  epochs: 30
+  warmup_epochs: 3         # LR warm-up lineare nelle prime 3 epoche
+  lr: 1e-4
+  weight_decay: 1e-4
+  scheduler: cosine        # CosineAnnealingLR dopo il warm-up
+  patience: 7              # Epoche di patience per early stopping (monitor: val_top1)
+  mixed_precision: true    # AMP FP16 (ignorato automaticamente su CPU)
+  gradient_accumulation_steps: 1  # Aumentare a 4 su gpu-medium (5632 MB VRAM)

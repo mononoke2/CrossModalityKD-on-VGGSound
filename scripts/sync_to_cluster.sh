@@ -7,16 +7,19 @@
 # virtualenv, cache). Questi ultimi vivono solo sul cluster e si scaricano in
 # locale con il complementare ./scripts/sync_from_cluster.sh.
 #
-# Prerequisito: alias SSH "gcluster" configurato in ~/.ssh/config con accesso
-# passwordless (vedi docs / setup chiave). Override possibili via variabili
-# d'ambiente:
-#   REMOTE_HOST   host/alias ssh           (default: gcluster)
-#   REMOTE_DIR    path progetto sul cluster (default: dl26-projects)
+# Prerequisito: alias SSH 'gcluster' in ~/.ssh/config oppure impostazione della
+# variabile d'ambiente CLUSTER_USER con il proprio username di ateneo (codice fiscale).
+#
+# Variabili d'ambiente configurabili:
+#   CLUSTER_USER  username del cluster     (es. CLUSTER_USER=codicefiscale)
+#   REMOTE_HOST   host/alias ssh alternativo (default: autodetect alias 'gcluster')
+#   REMOTE_DIR    path progetto sul cluster  (default: dl26-projects)
 #
 # Uso:
-#   ./scripts/sync_to_cluster.sh            # sincronizza SOLO il codice (data/ escluso)
+#   ./scripts/sync_to_cluster.sh            # sincronizza SOLO il codice (data/ e pretrained_weights/ esclusi)
 #   ./scripts/sync_to_cluster.sh -n         # dry-run (mostra cosa farebbe)
 #   ./scripts/sync_to_cluster.sh --data     # include anche data/ (carica il dataset sul cluster)
+#   ./scripts/sync_to_cluster.sh --models   # include pretrained_weights/ (pesi ViT-B/16 per il cluster)
 #   ./scripts/sync_to_cluster.sh --delete   # rimuove sul cluster i file non piu presenti in locale
 #   REMOTE_DIR=other ./scripts/sync_to_cluster.sh
 #
@@ -25,7 +28,29 @@
 #
 set -euo pipefail
 
-REMOTE_HOST="${REMOTE_HOST:-gcluster}"
+# Determinazione dinamica e generale di REMOTE_HOST
+if [ -n "${REMOTE_HOST:-}" ]; then
+  # Se impostato esplicitamente via env, usiamo quello
+  :
+elif [ -n "${CLUSTER_USER:-}" ]; then
+  # Se è specificato l'username del cluster, costruiamo l'host reale
+  REMOTE_HOST="${CLUSTER_USER}@gcluster.dmi.unict.it"
+else
+  # Controlliamo se l'alias 'gcluster' è configurato in ~/.ssh/config
+  # 'ssh -G gcluster' restituisce la configurazione espansa. Se l'alias esiste,
+  # l'hostname conterrà 'gcluster.dmi.unict.it'.
+  if ssh -G gcluster 2>/dev/null | grep -qi '^hostname gcluster.dmi.unict.it'; then
+    REMOTE_HOST="gcluster"
+  else
+    echo "Errore: l'alias SSH 'gcluster' non è configurato e la variabile CLUSTER_USER non è definita." >&2
+    echo "Poiché non hai un file ~/.ssh/config, specifica il tuo username del cluster (codice fiscale)." >&2
+    echo "Esempio d'uso:" >&2
+    echo "  CLUSTER_USER=il_tuo_codice_fiscale $0 [opzioni]" >&2
+    echo "Oppure configura un alias SSH 'gcluster' in ~/.ssh/config." >&2
+    exit 1
+  fi
+fi
+
 REMOTE_DIR="${REMOTE_DIR:-dl26-projects}"
 
 # Radice del progetto = directory padre di questo script (così è lanciabile da ovunque).
@@ -36,11 +61,13 @@ PROJECT_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 DRY_RUN=""
 DELETE=""
 WITH_DATA=""
+WITH_MODELS=""
 for arg in "$@"; do
   case "$arg" in
     -n|--dry-run) DRY_RUN="--dry-run" ;;
     --delete)     DELETE="--delete" ;;
     --data)       WITH_DATA=1 ;;
+    --models)     WITH_MODELS=1 ;;
     -h|--help)
       grep '^#' "$0" | sed 's/^# \{0,1\}//'
       exit 0 ;;
@@ -54,6 +81,7 @@ done
 EXCLUDES=(
   --exclude '.git/'
   --exclude '.venv/'
+  --exclude 'docs/EXPERIMENT_LOG.md'
   --exclude 'venv/'
   --exclude '__pycache__/'
   --exclude '*.pyc'
@@ -64,13 +92,17 @@ EXCLUDES=(
   --exclude 'figures/'                   # grafici generati
   --exclude 'wandb/'
 )
-# data/ è escluso di default; con --data lo includiamo per caricare il dataset.
+# data/ e pretrained_weights/ sono esclusi di default.
 if [ -z "$WITH_DATA" ]; then
   EXCLUDES+=(--exclude 'data/')
 fi
+if [ -z "$WITH_MODELS" ]; then
+  EXCLUDES+=(--exclude 'pretrained_weights/')
+fi
 
 SCOPE="codice"
-[ -n "$WITH_DATA" ] && SCOPE="codice + data"
+[ -n "$WITH_DATA" ]   && SCOPE="${SCOPE} + data"
+[ -n "$WITH_MODELS" ] && SCOPE="${SCOPE} + pretrained_weights"
 echo ">> Deploy ${SCOPE}: ${PROJECT_ROOT}/  ->  ${REMOTE_HOST}:${REMOTE_DIR}/"
 [ -n "$WITH_DATA" ] && echo ">> --data attivo: verrà caricata anche la cartella data/ (può essere molto pesante)."
 [ -n "$DRY_RUN" ] && echo ">> DRY-RUN: nessuna modifica verrà applicata."
