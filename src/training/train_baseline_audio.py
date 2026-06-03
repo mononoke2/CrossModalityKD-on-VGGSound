@@ -359,7 +359,6 @@ def main() -> None:
         patience=patience,
         mode="max",
         min_delta=1e-4,
-        checkpoint_path=str(output_dir / "best.pth"),
     )
 
     # -- Resume ---------------------------------------------------------
@@ -433,8 +432,11 @@ def main() -> None:
         if epoch % 5 == 0:
             save_checkpoint(checkpoint_state, output_dir, f"epoch_{epoch:03d}.pth")
 
-        # Early stopping (salva automaticamente best.pth tramite EarlyStopping)
-        early_stopping(val_top1, checkpoint_state)
+        # Early stopping
+        improved = early_stopping.step(val_top1)
+        if improved:
+            # Nuovo best: salva best.pth
+            save_checkpoint(checkpoint_state, output_dir, "best.pth")
         if early_stopping.should_stop:
             logger.info("Early stopping attivato all'epoch %d. Best val_top1: %.2f%%", epoch, best_val_top1 * 100)
             break
