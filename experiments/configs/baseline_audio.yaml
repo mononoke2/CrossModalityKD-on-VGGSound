@@ -3,6 +3,7 @@ extends: common.yaml
 model:
   type: ast                  # AudioSpectrogramTransformer — ViT-B/16 (torchvision, no timm)
   pretrained: true           # carica i pesi ImageNet-pretrained di ViT-B/16
+  weights_path: pretrained_weights/vit_b_16.pth  # path locale (rsync-ato sul cluster)
   drop_rate: 0.1
   freeze_backbone: false  # true per warm-up nelle prime epoche, poi false
 

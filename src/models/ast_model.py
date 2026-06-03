@@ -11,6 +11,30 @@ per accettare log-mel-spectrogram 2D estratti da audio a 16 kHz.
 Il modello espone sia ``forward(x) → logits`` che ``forward_features(x) → embedding``
 per consentire la feature-level distillation nella Fase 3.
 
+Caricamento dei pesi pretrained sul cluster
+-------------------------------------------
+Il cluster non ha accesso a pytorch.org, ma i pesi possono essere caricati da
+file locale tramite il parametro ``weights_path``. Il workflow consigliato è:
+
+1. Scarica i pesi in locale (una tantum)::
+
+    python -c "
+    from torchvision.models import vit_b_16, ViT_B_16_Weights
+    import shutil, torch
+    vit_b_16(weights=ViT_B_16_Weights.IMAGENET1K_V1)  # scarica in cache
+    import os; cache = os.path.join(torch.hub.get_dir(), 'checkpoints', 'vit_b_16-c867db91.pth')
+    shutil.copy(cache, 'pretrained_weights/vit_b_16.pth')
+    "
+
+2. Sincronizza sul cluster con::
+
+    CLUSTER_USER=... ./scripts/sync_to_cluster.sh --models
+
+3. Imposta nel YAML::
+
+    model:
+      weights_path: pretrained_weights/vit_b_16.pth
+
 Adattamenti rispetto al ViT-B/16 ImageNet-pretrained
 ------------------------------------------------------
 1. **Patch embedding**: Conv2d(3→1, 16×16) — il canale singolo del
@@ -29,6 +53,7 @@ Gong et al., "AST: Audio Spectrogram Transformer", Interspeech 2021.
 from __future__ import annotations
 
 import math
+import os
 
 import torch
 import torch.nn as nn
@@ -56,6 +81,7 @@ class AudioSpectrogramTransformer(nn.Module):
         self,
         num_classes: int = 25,
         pretrained: bool = True,
+        weights_path: str | None = None,
         n_mels: int = 128,
         target_length: int = 1024,
         drop_rate: float = 0.1,
@@ -69,10 +95,21 @@ class AudioSpectrogramTransformer(nn.Module):
         self.embed_dim = _VIT_BASE_EMBED_DIM
 
         # ------------------------------------------------------------------
-        # 1. Carica backbone ViT-B/16 da torchvision
+        # 1. Carica backbone ViT-B/16 da torchvision.
+        #    Se weights_path è fornito e il file esiste, carica i pesi dal
+        #    file locale (per il cluster senza accesso a pytorch.org).
+        #    Altrimenti scarica automaticamente (solo uso locale).
         # ------------------------------------------------------------------
-        weights = ViT_B_16_Weights.IMAGENET1K_V1 if pretrained else None
-        vit = vit_b_16(weights=weights)
+        if pretrained and weights_path and os.path.isfile(weights_path):
+            print(f"[AST] Caricamento pesi pretrained da file locale: {weights_path}")
+            vit = vit_b_16(weights=None)  # architettura senza download
+            state_dict = torch.load(weights_path, map_location="cpu", weights_only=True)
+            vit.load_state_dict(state_dict)
+        elif pretrained:
+            print("[AST] Download pesi ViT-B/16 da pytorch.org (solo uso locale)...")
+            vit = vit_b_16(weights=ViT_B_16_Weights.IMAGENET1K_V1)
+        else:
+            vit = vit_b_16(weights=None)
 
         # ------------------------------------------------------------------
         # 2. Adatta il patch embedding: Conv2d(3, 768, 16, 16) → (1, 768, 16, 16)
@@ -218,6 +255,7 @@ def build_ast(cfg: dict) -> AudioSpectrogramTransformer:
     return AudioSpectrogramTransformer(
         num_classes=int(ds_cfg.get("num_classes", 25)),
         pretrained=bool(model_cfg.get("pretrained", True)),
+        weights_path=model_cfg.get("weights_path", None),
         n_mels=int(ds_cfg.get("n_mels", 128)),
         target_length=int(ds_cfg.get("target_length", 1024)),
         drop_rate=float(model_cfg.get("drop_rate", 0.1)),
