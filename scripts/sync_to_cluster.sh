@@ -16,9 +16,10 @@
 #   REMOTE_DIR    path progetto sul cluster  (default: dl26-projects)
 #
 # Uso:
-#   ./scripts/sync_to_cluster.sh            # sincronizza SOLO il codice (data/ escluso)
+#   ./scripts/sync_to_cluster.sh            # sincronizza SOLO il codice (data/ e pretrained_weights/ esclusi)
 #   ./scripts/sync_to_cluster.sh -n         # dry-run (mostra cosa farebbe)
 #   ./scripts/sync_to_cluster.sh --data     # include anche data/ (carica il dataset sul cluster)
+#   ./scripts/sync_to_cluster.sh --models   # include pretrained_weights/ (pesi ViT-B/16 per il cluster)
 #   ./scripts/sync_to_cluster.sh --delete   # rimuove sul cluster i file non piu presenti in locale
 #   REMOTE_DIR=other ./scripts/sync_to_cluster.sh
 #
@@ -60,11 +61,13 @@ PROJECT_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 DRY_RUN=""
 DELETE=""
 WITH_DATA=""
+WITH_MODELS=""
 for arg in "$@"; do
   case "$arg" in
     -n|--dry-run) DRY_RUN="--dry-run" ;;
     --delete)     DELETE="--delete" ;;
     --data)       WITH_DATA=1 ;;
+    --models)     WITH_MODELS=1 ;;
     -h|--help)
       grep '^#' "$0" | sed 's/^# \{0,1\}//'
       exit 0 ;;
@@ -78,6 +81,7 @@ done
 EXCLUDES=(
   --exclude '.git/'
   --exclude '.venv/'
+  --exclude 'docs/EXPERIMENT_LOG.md'
   --exclude 'venv/'
   --exclude '__pycache__/'
   --exclude '*.pyc'
@@ -88,13 +92,17 @@ EXCLUDES=(
   --exclude 'figures/'                   # grafici generati
   --exclude 'wandb/'
 )
-# data/ è escluso di default; con --data lo includiamo per caricare il dataset.
+# data/ e pretrained_weights/ sono esclusi di default.
 if [ -z "$WITH_DATA" ]; then
   EXCLUDES+=(--exclude 'data/')
 fi
+if [ -z "$WITH_MODELS" ]; then
+  EXCLUDES+=(--exclude 'pretrained_weights/')
+fi
 
 SCOPE="codice"
-[ -n "$WITH_DATA" ] && SCOPE="codice + data"
+[ -n "$WITH_DATA" ]   && SCOPE="${SCOPE} + data"
+[ -n "$WITH_MODELS" ] && SCOPE="${SCOPE} + pretrained_weights"
 echo ">> Deploy ${SCOPE}: ${PROJECT_ROOT}/  ->  ${REMOTE_HOST}:${REMOTE_DIR}/"
 [ -n "$WITH_DATA" ] && echo ">> --data attivo: verrà caricata anche la cartella data/ (può essere molto pesante)."
 [ -n "$DRY_RUN" ] && echo ">> DRY-RUN: nessuna modifica verrà applicata."
