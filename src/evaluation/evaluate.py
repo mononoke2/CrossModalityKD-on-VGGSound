@@ -273,7 +273,7 @@ def main() -> None:
         ).to(device)
 
     latency_ms = measure_inference_time_ms(model, example_input, n_runs=100, warmup=20, device=device)
-    print(f"Inference latency: {latency_ms:.2f} ms (avg su 100 run)")
+    print(f"Inference latency: {latency_ms['mean_ms']:.2f} ms (avg su 100 run)")
 
     # -- Valutazione --
     print("Avvio valutazione...")
@@ -294,7 +294,7 @@ def main() -> None:
     print(f"  Top-5 Accuracy: {results['top5_acc'] * 100:.2f}%")
     print(f"  Val Loss:       {results['loss']:.4f}")
     print(f"  Model Size:     {results['model_size_mb']:.2f} MB")
-    print(f"  Latency:        {results['inference_latency_ms']:.2f} ms")
+    print(f"  Latency:        {results['inference_latency_ms']['mean_ms']:.2f} ms")
     print(f"  Samples:        {results['num_samples']}")
     print("=" * 60)
 
