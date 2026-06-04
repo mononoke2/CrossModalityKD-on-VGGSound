@@ -1,0 +1,35 @@
+extends: common.yaml
+
+# Configurazione per la Fase 3 — Student Distillato (Cross-Modal KD).
+# Per l'ablation study di alpha, usare i file distillation_alpha_*.yaml oppure
+# l'override da CLI: python -m src.training.train_distillation --alpha 0.3
+
+teacher:
+  type: resnet50
+  checkpoint: experiments/checkpoints/teacher_vision/best.pth
+  weights_path: pretrained_weights/resnet50.pth   # pesi ImageNet per caricamento offline
+
+student:
+  type: ast
+  pretrained: true
+  weights_path: pretrained_weights/vit_b_16.pth   # pesi ImageNet per caricamento offline
+  drop_rate: 0.1
+  freeze_backbone: false
+
+distillation:
+  alpha: 0.7            # peso del termine soft KL vs. hard CE (default per il run principale)
+  temperature: 4.0      # temperatura per ammorbidire le distribuzioni
+  use_feature_distillation: true   # abilita anche la feature-level MSE loss
+  feature_weight: 0.3   # peso della feature distillation rispetto alla loss totale
+
+training:
+  batch_size: 32
+  epochs: 30
+  warmup_epochs: 5
+  lr: 5e-5
+  weight_decay: 5e-4
+  label_smoothing: 0.1
+  scheduler: cosine
+  patience: 7
+  mixed_precision: true
+  gradient_accumulation_steps: 1
