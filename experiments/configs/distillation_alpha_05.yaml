@@ -1,0 +1,7 @@
+extends: distillation.yaml
+
+distillation:
+  alpha: 0.5
+  temperature: 4.0
+  use_feature_distillation: true
+  feature_weight: 0.3
