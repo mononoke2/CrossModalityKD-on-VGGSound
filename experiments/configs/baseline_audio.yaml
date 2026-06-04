@@ -10,9 +10,10 @@ model:
 training:
   batch_size: 32
   epochs: 30
-  warmup_epochs: 3         # LR warm-up lineare nelle prime 3 epoche
-  lr: 1e-4
-  weight_decay: 1e-4
+  warmup_epochs: 5         # LR warm-up lineare nelle prime 5 epoche
+  lr: 5e-5
+  weight_decay: 5e-4
+  label_smoothing: 0.1     # Riduce l'overconfidence e addolcisce la val loss
   scheduler: cosine        # CosineAnnealingLR dopo il warm-up
   patience: 7              # Epoche di patience per early stopping (monitor: val_top1)
   mixed_precision: true    # AMP FP16 (ignorato automaticamente su CPU)

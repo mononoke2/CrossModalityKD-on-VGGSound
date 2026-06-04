@@ -351,7 +351,8 @@ def main() -> None:
     scaler = GradScaler() if use_amp else None
 
     # -- Loss -----------------------------------------------------------
-    criterion = nn.CrossEntropyLoss(label_smoothing=0.1)
+    label_smoothing = float(train_cfg.get("label_smoothing", 0.0))
+    criterion = nn.CrossEntropyLoss(label_smoothing=label_smoothing)
 
     # -- Early stopping -------------------------------------------------
     patience = int(train_cfg.get("patience", 7))
