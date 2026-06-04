@@ -272,8 +272,11 @@ def main() -> None:
             1, 3, int(ds_cfg.get("frame_size", 224)), int(ds_cfg.get("frame_size", 224))
         ).to(device)
 
-    latency_ms = measure_inference_time_ms(model, example_input, n_runs=100, warmup=20, device=device)
-    print(f"Inference latency: {latency_ms['mean_ms']:.2f} ms (avg su 100 run)")
+    # measure_inference_time_ms restituisce un dict {mean_ms, std_ms, min_ms, max_ms}:
+    # usiamo la media per il confronto, conservando le statistiche complete nel JSON.
+    latency_stats = measure_inference_time_ms(model, example_input, n_runs=100, warmup=20, device=device)
+    latency_ms = latency_stats["mean_ms"]
+    print(f"Inference latency: {latency_ms:.2f} ms (avg su 100 run, std {latency_stats['std_ms']:.2f})")
 
     # -- Valutazione --
     print("Avvio valutazione...")
@@ -283,6 +286,7 @@ def main() -> None:
 
     results["model_size_mb"] = size_mb
     results["inference_latency_ms"] = latency_ms
+    results["inference_latency_stats"] = latency_stats
     results["eval_time_s"] = elapsed
     results["checkpoint"] = args.checkpoint
     results["split"] = args.split
@@ -294,7 +298,7 @@ def main() -> None:
     print(f"  Top-5 Accuracy: {results['top5_acc'] * 100:.2f}%")
     print(f"  Val Loss:       {results['loss']:.4f}")
     print(f"  Model Size:     {results['model_size_mb']:.2f} MB")
-    print(f"  Latency:        {results['inference_latency_ms']['mean_ms']:.2f} ms")
+    print(f"  Latency:        {results['inference_latency_ms']:.2f} ms")
     print(f"  Samples:        {results['num_samples']}")
     print("=" * 60)
 
