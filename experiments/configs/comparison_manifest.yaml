@@ -1,0 +1,65 @@
+# Manifest per la valutazione comparativa multi-modello
+#
+# Elenca i checkpoint "best" dei modelli da confrontare sul test set blindato.
+# Usato da `src.evaluation.evaluate --compare [--manifest <questo file>]`.
+#
+# Note:
+# - I 4 student distillati condividono l'architettura AST del baseline audio:
+#   per costruirli si riusa `baseline_audio.yaml` (i config `distillation_*.yaml`
+#   definiscono il modello sotto la chiave `student:`, non `model:`); i pesi
+#   corretti vengono comunque caricati dal rispettivo checkpoint.
+# - Gli student distillati a inference sono audio-only (modality hallucination)
+#   quindi `modality: audio`, come il baseline.
+
+models:
+  - name: teacher_resnet50
+    label: "ResNet-50 Teacher"
+    exp_id: EXP-002
+    config: experiments/configs/teacher_vision.yaml
+    checkpoint: experiments/checkpoints/teacher_vision/best.pth
+    model_type: resnet50
+    modality: video
+
+  - name: baseline_audio
+    label: "AST Audio Baseline"
+    exp_id: EXP-001
+    config: experiments/configs/baseline_audio.yaml
+    checkpoint: experiments/checkpoints/baseline_audio/best.pth
+    model_type: ast
+    modality: audio
+
+  - name: distill_alpha03
+    label: "Student KD (alpha=0.3)"
+    exp_id: EXP-003
+    config: experiments/configs/baseline_audio.yaml
+    checkpoint: experiments/checkpoints/distillation_alpha03/best.pth
+    model_type: ast
+    modality: audio
+    alpha: 0.3
+
+  - name: distill_alpha05
+    label: "Student KD (alpha=0.5)"
+    exp_id: EXP-004
+    config: experiments/configs/baseline_audio.yaml
+    checkpoint: experiments/checkpoints/distillation_alpha05/best.pth
+    model_type: ast
+    modality: audio
+    alpha: 0.5
+
+  - name: distill_alpha07
+    label: "Student KD (alpha=0.7)"
+    exp_id: EXP-005
+    config: experiments/configs/baseline_audio.yaml
+    checkpoint: experiments/checkpoints/distillation_alpha07/best.pth
+    model_type: ast
+    modality: audio
+    alpha: 0.7
+
+  - name: distill_alpha09
+    label: "Student KD (alpha=0.9)"
+    exp_id: EXP-006
+    config: experiments/configs/baseline_audio.yaml
+    checkpoint: experiments/checkpoints/distillation_alpha09/best.pth
+    model_type: ast
+    modality: audio
+    alpha: 0.9

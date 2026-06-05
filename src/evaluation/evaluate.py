@@ -82,7 +82,14 @@ def load_model(model_type: str, cfg: dict, checkpoint_path: str, device: torch.d
     """Carica il modello corretto in base a ``model_type`` e applica il checkpoint."""
     if model_type == "ast":
         from src.models.ast_model import build_ast
-        model = build_ast(cfg)
+        # Per la valutazione non serve inizializzare l'architettura con i pesi
+        # ImageNet (che richiedono internet sul cluster): il checkpoint caricato
+        # subito dopo sovrascrive comunque tutti i parametri.
+        eval_cfg = dict(cfg)
+        eval_cfg["model"] = dict(cfg.get("model", {}))
+        eval_cfg["model"]["pretrained"] = False
+        eval_cfg["model"]["weights_path"] = None
+        model = build_ast(eval_cfg)
     elif model_type == "resnet50":
         from src.models.vision_teacher import build_vision_teacher
         model = build_vision_teacher(cfg)
@@ -90,7 +97,14 @@ def load_model(model_type: str, cfg: dict, checkpoint_path: str, device: torch.d
         raise ValueError(f"model_type non riconosciuto: {model_type!r}. Validi: 'ast', 'resnet50'.")
 
     ckpt = torch.load(checkpoint_path, map_location="cpu", weights_only=False)
-    state_dict = ckpt.get("model", ckpt)  # supporta sia il formato raw che quello wrapped
+    # Supporta i diversi formati di checkpoint del progetto:
+    # - train_baseline_audio.py / train_teacher.py salvano i pesi sotto "model"
+    # - train_distillation.py salva lo student sotto "student"
+    # - eventuale state_dict "raw" (nessun wrapping)
+    if isinstance(ckpt, dict):
+        state_dict = ckpt.get("model") or ckpt.get("student") or ckpt
+    else:
+        state_dict = ckpt
     model.load_state_dict(state_dict)
     model.to(device)
     model.eval()
@@ -185,15 +199,183 @@ def plot_confusion_matrix(
     print(f"Confusion matrix salvata in: {save_path}")
 
 
+def resolve_device(device_arg: str | None) -> torch.device:
+    """Risolve il device richiesto, con fallback automatico su CPU."""
+    if device_arg:
+        return torch.device(device_arg)
+    if torch.cuda.is_available():
+        return torch.device("cuda")
+    return torch.device("cpu")
+
+
+def evaluate_spec(
+    config_path: str,
+    checkpoint: str,
+    model_type: str,
+    modality: str | None,
+    split: str,
+    batch_size: int,
+    device: torch.device,
+) -> tuple[dict, list[str]]:
+    """Valuta un singolo modello e ne restituisce metriche + nomi delle classi.
+
+    Riusato sia dal percorso single-model sia dalla modalità ``--compare``.
+    """
+    cfg = load_config(config_path)
+    ds_cfg = cfg.get("dataset", {})
+    num_classes = int(ds_cfg.get("num_classes", 25))
+
+    if modality is None:
+        modality = "video" if model_type == "resnet50" else "audio"
+    print(f"  Modello: {model_type} | Modality: {modality} | Split: {split}")
+
+    dataset = VGGSoundDataset(
+        split=split,
+        modality=modality,
+        config=config_path,
+        require_files=True,
+    )
+    loader = DataLoader(
+        dataset,
+        batch_size=batch_size,
+        shuffle=False,
+        num_workers=4,
+        pin_memory=device.type == "cuda",
+    )
+    print(f"  Dataset {split}: {len(dataset)} campioni")
+
+    print(f"  Caricamento checkpoint: {checkpoint}")
+    model = load_model(model_type, cfg, checkpoint, device)
+
+    size_mb = model_size_mb(model, include_buffers=True)
+
+    # Latenza di inferenza con input sintetico della forma corretta per la modalità.
+    if modality in ("audio", "both"):
+        example_input = torch.randn(
+            1, 1, int(ds_cfg.get("n_mels", 128)), int(ds_cfg.get("target_length", 1024))
+        ).to(device)
+    else:
+        example_input = torch.randn(
+            1, 3, int(ds_cfg.get("frame_size", 224)), int(ds_cfg.get("frame_size", 224))
+        ).to(device)
+    latency_stats = measure_inference_time_ms(model, example_input, n_runs=100, warmup=20, device=device)
+
+    t0 = time.time()
+    results = run_evaluation(model, loader, device, num_classes)
+    results["model_size_mb"] = size_mb
+    results["inference_latency_ms"] = latency_stats["mean_ms"]
+    results["inference_latency_stats"] = latency_stats
+    results["eval_time_s"] = time.time() - t0
+    results["checkpoint"] = checkpoint
+    results["split"] = split
+    results["model_type"] = model_type
+    results["modality"] = modality
+    return results, dataset.classes
+
+
+def format_markdown_table(rows: list[dict], split: str) -> str:
+    """Formatta i risultati della comparison come tabella Markdown pronta per il log."""
+    header = (
+        f"| Exp ID | Modello | Top-1 {split} (%) | Top-5 {split} (%) | "
+        "Model Size (MB) | Inf. Latency (ms) |\n"
+        "| --- | --- | :---: | :---: | :---: | :---: |"
+    )
+    lines = [header]
+    for r in rows:
+        lines.append(
+            f"| {r.get('exp_id', '-')} | {r.get('label', r.get('name', '-'))} | "
+            f"{r['top1_acc'] * 100:.2f} | {r['top5_acc'] * 100:.2f} | "
+            f"{r['model_size_mb']:.2f} | {r['inference_latency_ms']:.2f} |"
+        )
+    return "\n".join(lines)
+
+
+def run_comparison(
+    manifest_path: str,
+    split: str,
+    batch_size: int,
+    device: torch.device,
+) -> None:
+    """Valuta tutti i modelli elencati nel manifest e produce la tabella comparativa."""
+    with open(manifest_path, "r", encoding="utf-8") as f:
+        manifest = yaml.safe_load(f) or {}
+    models = manifest.get("models", [])
+    if not models:
+        raise ValueError(f"Manifest {manifest_path!r} non contiene alcun modello sotto 'models'.")
+
+    rows: list[dict] = []
+    figures_dir = _PROJECT_ROOT / "figures"
+    for entry in models:
+        name = entry["name"]
+        print("\n" + "-" * 60)
+        print(f"[{name}] {entry.get('label', '')}")
+        results, class_names = evaluate_spec(
+            config_path=entry["config"],
+            checkpoint=entry["checkpoint"],
+            model_type=entry["model_type"],
+            modality=entry.get("modality"),
+            split=split,
+            batch_size=batch_size,
+            device=device,
+        )
+        # Metadati dal manifest (per la tabella e l'analisi ablation).
+        for key in ("name", "label", "exp_id", "alpha"):
+            if key in entry:
+                results[key] = entry[key]
+        print(
+            f"  -> Top-1: {results['top1_acc'] * 100:.2f}% | "
+            f"Top-5: {results['top5_acc'] * 100:.2f}% | "
+            f"Size: {results['model_size_mb']:.2f} MB | "
+            f"Latency: {results['inference_latency_ms']:.2f} ms"
+        )
+        # Confusion matrix per modello (utile a comparison.py / side-by-side).
+        cm = results.pop("confusion_matrix")
+        plot_confusion_matrix(
+            cm, class_names, figures_dir / f"confusion_matrix_{name}_{split}.png"
+        )
+        results["confusion_matrix"] = cm  # reinserita per il salvataggio JSON completo
+        rows.append(results)
+
+    # -- Tabella comparativa --
+    table = format_markdown_table(rows, split)
+    print("\n" + "=" * 60)
+    print("  TABELLA COMPARATIVA (Markdown — pronta per EXPERIMENT_LOG)")
+    print("=" * 60)
+    print(table)
+    print("=" * 60)
+
+    # -- Salvataggio JSON aggregato --
+    out_dir = _PROJECT_ROOT / "experiments" / "logs" / "comparison"
+    out_dir.mkdir(parents=True, exist_ok=True)
+    json_path = out_dir / f"comparison_{split}.json"
+    with open(json_path, "w", encoding="utf-8") as f:
+        json.dump({"split": split, "models": rows}, f, indent=2)
+    print(f"\nRisultati comparativi salvati in: {json_path}")
+
+    table_path = out_dir / f"comparison_{split}.md"
+    with open(table_path, "w", encoding="utf-8") as f:
+        f.write(table + "\n")
+    print(f"Tabella Markdown salvata in: {table_path}")
+
+
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Evaluate model — Track 24")
-    parser.add_argument("--config", required=True, help="Path al file YAML di configurazione.")
-    parser.add_argument("--checkpoint", required=True, help="Path al checkpoint .pth da valutare.")
+    parser.add_argument(
+        "--compare",
+        action="store_true",
+        help="Modalità confronto multi-modello: valuta tutti i modelli del manifest.",
+    )
+    parser.add_argument(
+        "--manifest",
+        default="experiments/configs/comparison_manifest.yaml",
+        help="Manifest YAML dei modelli da confrontare (usato con --compare).",
+    )
+    parser.add_argument("--config", help="Path al file YAML di configurazione (single-model).")
+    parser.add_argument("--checkpoint", help="Path al checkpoint .pth da valutare (single-model).")
     parser.add_argument(
         "--model-type",
-        required=True,
         choices=["ast", "resnet50"],
-        help="Tipo di modello: 'ast' o 'resnet50'.",
+        help="Tipo di modello: 'ast' o 'resnet50' (single-model).",
     )
     parser.add_argument(
         "--split",
@@ -218,79 +400,30 @@ def parse_args() -> argparse.Namespace:
 
 def main() -> None:
     args = parse_args()
-
-    cfg = load_config(args.config)
-    ds_cfg = cfg.get("dataset", {})
-    num_classes = int(ds_cfg.get("num_classes", 25))
-
-    # -- Device --
-    if args.device:
-        device = torch.device(args.device)
-    elif torch.cuda.is_available():
-        device = torch.device("cuda")
-    else:
-        device = torch.device("cpu")
+    device = resolve_device(args.device)
     print(f"Device: {device}")
 
-    # -- Modalità dataset: inferita se non specificata --
-    modality = args.modality
-    if modality is None:
-        modality = "video" if args.model_type == "resnet50" else "audio"
-    print(f"Modello: {args.model_type} | Modality: {modality} | Split: {args.split}")
+    # -- Modalità confronto multi-modello (Fase 4) --
+    if args.compare:
+        run_comparison(args.manifest, args.split, args.batch_size, device)
+        return
 
-    # -- Dataset --
-    dataset = VGGSoundDataset(
+    # -- Modalità single-model --
+    if not (args.config and args.checkpoint and args.model_type):
+        raise SystemExit(
+            "Modalità single-model: --config, --checkpoint e --model-type sono obbligatori "
+            "(oppure usa --compare per il confronto multi-modello)."
+        )
+
+    results, class_names = evaluate_spec(
+        config_path=args.config,
+        checkpoint=args.checkpoint,
+        model_type=args.model_type,
+        modality=args.modality,
         split=args.split,
-        modality=modality,
-        config=args.config,
-        require_files=True,
-    )
-    loader = DataLoader(
-        dataset,
         batch_size=args.batch_size,
-        shuffle=False,
-        num_workers=4,
-        pin_memory=device.type == "cuda",
+        device=device,
     )
-    print(f"Dataset {args.split}: {len(dataset)} campioni")
-
-    # -- Modello --
-    print(f"Caricamento checkpoint: {args.checkpoint}")
-    model = load_model(args.model_type, cfg, args.checkpoint, device)
-
-    # -- Metriche modello --
-    size_mb = model_size_mb(model, include_buffers=True)
-    print(f"Model size: {size_mb:.2f} MB")
-
-    # Latenza di inferenza (input sintetico con la forma corretta)
-    if modality in ("audio", "both"):
-        example_input = torch.randn(
-            1, 1, int(ds_cfg.get("n_mels", 128)), int(ds_cfg.get("target_length", 1024))
-        ).to(device)
-    else:
-        example_input = torch.randn(
-            1, 3, int(ds_cfg.get("frame_size", 224)), int(ds_cfg.get("frame_size", 224))
-        ).to(device)
-
-    # measure_inference_time_ms restituisce un dict {mean_ms, std_ms, min_ms, max_ms}:
-    # usiamo la media per il confronto, conservando le statistiche complete nel JSON.
-    latency_stats = measure_inference_time_ms(model, example_input, n_runs=100, warmup=20, device=device)
-    latency_ms = latency_stats["mean_ms"]
-    print(f"Inference latency: {latency_ms:.2f} ms (avg su 100 run, std {latency_stats['std_ms']:.2f})")
-
-    # -- Valutazione --
-    print("Avvio valutazione...")
-    t0 = time.time()
-    results = run_evaluation(model, loader, device, num_classes)
-    elapsed = time.time() - t0
-
-    results["model_size_mb"] = size_mb
-    results["inference_latency_ms"] = latency_ms
-    results["inference_latency_stats"] = latency_stats
-    results["eval_time_s"] = elapsed
-    results["checkpoint"] = args.checkpoint
-    results["split"] = args.split
-    results["model_type"] = args.model_type
 
     # -- Stampa risultati --
     print("\n" + "=" * 60)
@@ -316,7 +449,7 @@ def main() -> None:
 
     # -- Plot confusion matrix --
     fig_path = _PROJECT_ROOT / "figures" / f"confusion_matrix_{run_name}_{args.split}.png"
-    plot_confusion_matrix(results["confusion_matrix"], dataset.classes, fig_path)
+    plot_confusion_matrix(results["confusion_matrix"], class_names, fig_path)
 
 
 if __name__ == "__main__":
