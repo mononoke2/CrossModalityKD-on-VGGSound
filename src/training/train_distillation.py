@@ -13,7 +13,7 @@ dove:
 
 Il teacher elabora il frame visivo (``modality="video"``); lo student elabora
 il mel-spectrogram audio (``modality="audio"``). Entrambi i tensori vengono
-restituiti dal dataset impostando ``modality="audio+video"``.
+restituiti dal dataset impostando ``modality="both"``.
 
 Uso (locale, debug):
     python -m src.training.train_distillation \\
