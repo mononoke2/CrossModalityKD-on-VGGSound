@@ -450,7 +450,13 @@ def main() -> None:
     print(f"Device: {device}")
 
     # -- Output dir ----------------------------------------------------------
-    run_name = f"distillation_alpha{alpha:.1f}".replace(".", "")
+    student_type = args.student_type
+    if student_type == "ast":
+        run_name = f"distillation_alpha{alpha:.1f}".replace(".", "")
+    else:
+        model_suffix = student_type.replace("_audio", "")
+        run_name = f"distillation_{model_suffix}"
+
     output_dir = Path(args.output_dir) if args.output_dir else (
         _PROJECT_ROOT / "experiments" / "checkpoints" / run_name
     )
