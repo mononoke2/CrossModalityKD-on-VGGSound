@@ -1,0 +1,19 @@
+extends: common.yaml
+
+model:
+  type: efficientnet_b0_audio
+  pretrained: true
+  weights_path: pretrained_weights/efficientnet_b0.pth
+
+training:
+  batch_size: 64
+  epochs: 30
+  lr: 1e-4
+  weight_decay: 1e-4
+  scheduler: cosine
+  warmup_epochs: 3
+  label_smoothing: 0.1
+  mixed_precision: true
+  early_stopping:
+    patience: 7
+    monitor: val_top1

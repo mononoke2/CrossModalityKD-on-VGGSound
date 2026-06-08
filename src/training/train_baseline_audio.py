@@ -51,6 +51,7 @@ if str(_PROJECT_ROOT) not in sys.path:
 
 from src.datasets.vggsound import VGGSoundDataset
 from src.models.ast_model import build_ast
+from src.models.light_audio_models import build_light_audio_student
 from src.utils.early_stopping import EarlyStopping
 from src.utils.logger import ExperimentLogger
 from src.utils.metrics import top_k_accuracy
@@ -277,13 +278,15 @@ def main() -> None:
     print(f"Device: {device}")
 
     # -- Output dir ------------------------------------------------------
+    model_type = model_cfg.get("type", "ast")
+    run_name = f"baseline_{model_type}" if model_type != "ast" else "baseline_audio"
     output_dir = Path(args.output_dir) if args.output_dir else (
-        _PROJECT_ROOT / "experiments" / "checkpoints" / "baseline_audio"
+        _PROJECT_ROOT / "experiments" / "checkpoints" / run_name
     )
-    log_dir = _PROJECT_ROOT / "experiments" / "logs" / "baseline_audio"
+    log_dir = _PROJECT_ROOT / "experiments" / "logs" / run_name
 
     logger = ExperimentLogger(
-        name="baseline_audio",
+        name=run_name,
         log_dir=str(log_dir),
         use_tensorboard=True,
         use_wandb=False,
@@ -322,7 +325,10 @@ def main() -> None:
     )
 
     # -- Modello --------------------------------------------------------
-    model = build_ast(cfg).to(device)
+    if model_type == "ast":
+        model = build_ast(cfg).to(device)
+    else:
+        model = build_light_audio_student(model_type, cfg).to(device)
     logger.info("%s", model)
 
     # -- Ottimizzatore e Scheduler --------------------------------------
