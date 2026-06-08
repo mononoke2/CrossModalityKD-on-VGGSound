@@ -38,12 +38,16 @@ if str(_PROJECT_ROOT) not in sys.path:
 # Palette e stile
 # ---------------------------------------------------------------------------
 PALETTE = {
-    "teacher":    "#6c757d",   # grigio
-    "baseline":   "#4361ee",   # blu
-    "alpha03":    "#f72585",   # rosa
-    "alpha05":    "#7209b7",   # viola
-    "alpha07":    "#3a0ca3",   # viola scuro
-    "alpha09":    "#b5179e",   # magenta
+    "teacher":          "#6c757d",   # grigio
+    "baseline":         "#4361ee",   # blu (AST Baseline)
+    "alpha03":          "#f72585",   # rosa
+    "alpha05":          "#7209b7",   # viola
+    "alpha07":          "#3a0ca3",   # viola scuro
+    "alpha09":          "#b5179e",   # magenta
+    "eff_baseline":     "#4cc9f0",   # ciano (EfficientNet Baseline)
+    "eff_kd":           "#4895ef",   # azzurro (EfficientNet KD)
+    "mobile_baseline":  "#f1c40f",   # giallo (MobileNet Baseline)
+    "mobile_kd":        "#e67e22",   # arancione (MobileNet KD)
 }
 
 _EXP_COLOR = {
@@ -53,6 +57,10 @@ _EXP_COLOR = {
     "EXP-004": PALETTE["alpha05"],
     "EXP-005": PALETTE["alpha07"],
     "EXP-006": PALETTE["alpha09"],
+    "EXP-009": PALETTE["eff_baseline"],
+    "EXP-007": PALETTE["eff_kd"],
+    "EXP-010": PALETTE["mobile_baseline"],
+    "EXP-008": PALETTE["mobile_kd"],
 }
 
 _ALPHA_COLOR = {
@@ -212,7 +220,7 @@ def plot_efficiency_comparison(models: list[dict], output_dir: Path) -> Path:
 
 def plot_ablation_alpha(models: list[dict], output_dir: Path) -> Path:
     distill = sorted(
-        [m for m in models if "alpha" in m],
+        [m for m in models if "alpha" in m and m.get("model_type") == "ast"],
         key=lambda m: m["alpha"]
     )
     alphas  = [m["alpha"] for m in distill]
@@ -342,6 +350,76 @@ def plot_confusion_matrix_comparison(
 
 
 # ---------------------------------------------------------------------------
+# Plot 5 — Trade-off: Accuracy vs Latency vs Model Size
+# ---------------------------------------------------------------------------
+
+def plot_tradeoff_comparison(models: list[dict], output_dir: Path) -> Path:
+    fig, ax = plt.subplots(figsize=(10, 7))
+    fig.patch.set_facecolor("#0d1117")
+
+    for m in models:
+        exp_id = m["exp_id"]
+        label = m["label"]
+        latency = m["inference_latency_ms"]
+        acc = m["top1_acc"] * 100
+        size = m["model_size_mb"]
+        color = _EXP_COLOR.get(exp_id, "#adb5bd")
+
+        # Dimensione del marcatore basata sulla radice della dimensione in MB
+        marker_size = 80 + np.sqrt(size) * 25
+
+        if exp_id == "EXP-002":
+            marker = "s"  # Square per il Teacher
+        elif "KD" in label or "alpha" in label or exp_id in ("EXP-003", "EXP-004", "EXP-005", "EXP-006", "EXP-007", "EXP-008"):
+            marker = "*"  # Star per KD
+        else:
+            marker = "o"  # Circle per Baseline
+
+        ax.scatter(latency, acc, color=color, s=marker_size, marker=marker,
+                   zorder=4, edgecolors="#f0f6fc", linewidths=1.0, alpha=0.9)
+
+        # Spostamento del testo per evitare sovrapposizioni
+        offset_y = 0.4
+        offset_x = 0.05
+        if "MobileNet" in label:
+            offset_y = -0.8
+        elif "EfficientNet" in label:
+            offset_y = -0.6
+        elif "Teacher" in label:
+            offset_y = 0.5
+            offset_x = -0.15
+
+        ax.text(latency + offset_x, acc + offset_y, f"{label}\n({size:.1f} MB)",
+                fontsize=8, color=color, fontweight="semibold", va="center")
+
+    ax.set_xlabel("Latenza di Inferenza (ms)")
+    ax.set_ylabel("Top-1 Test Accuracy (%)")
+    ax.set_title("Trade-off Accuratezza vs Latenza vs Dimensione dei Modelli")
+    ax.yaxis.grid(True, alpha=0.3, zorder=0)
+    ax.xaxis.grid(True, alpha=0.3, zorder=0)
+    ax.set_axisbelow(True)
+
+    legend_elements = [
+        plt.Line2D([0], [0], marker='o', color='w', label='Baseline pure', markerfacecolor='#4361ee', markersize=10),
+        plt.Line2D([0], [0], marker='*', color='w', label='Modelli distillati (KD)', markerfacecolor='#f72585', markersize=12),
+        plt.Line2D([0], [0], marker='s', color='w', label='Teacher visivo', markerfacecolor='#6c757d', markersize=10),
+    ]
+    ax.legend(handles=legend_elements, loc="lower left", framealpha=0.3, fontsize=9.5)
+
+    all_latencies = [m["inference_latency_ms"] for m in models]
+    all_accs = [m["top1_acc"] * 100 for m in models]
+    ax.set_xlim(min(all_latencies) - 0.4, max(all_latencies) + 0.9)
+    ax.set_ylim(min(all_accs) - 2.5, max(all_accs) + 3)
+
+    fig.tight_layout()
+    out = output_dir / "tradeoff_comparison.png"
+    fig.savefig(out, dpi=150, bbox_inches="tight")
+    plt.close(fig)
+    print(f"[OK] Salvato: {out}")
+    return out
+
+
+# ---------------------------------------------------------------------------
 # Main
 # ---------------------------------------------------------------------------
 
@@ -386,6 +464,7 @@ def main() -> None:
     plot_accuracy_comparison(models, output_dir)
     plot_efficiency_comparison(models, output_dir)
     plot_ablation_alpha(models, output_dir)
+    plot_tradeoff_comparison(models, output_dir)
 
     # Per la confusion matrix, usa i nomi forniti o quelli eventualmente nel JSON
     class_names = args.class_names
