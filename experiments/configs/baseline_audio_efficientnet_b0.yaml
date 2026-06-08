@@ -6,7 +6,7 @@ model:
   weights_path: pretrained_weights/efficientnet_b0.pth
 
 training:
-  batch_size: 64
+  batch_size: 32
   epochs: 30
   lr: 1e-4
   weight_decay: 1e-4

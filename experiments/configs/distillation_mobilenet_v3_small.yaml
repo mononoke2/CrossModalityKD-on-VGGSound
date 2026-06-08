@@ -5,3 +5,7 @@ student:
   pretrained: true
   weights_path: pretrained_weights/mobilenet_v3_small.pth
   drop_rate: 0.2
+
+training:
+  batch_size: 16
+  gradient_accumulation_steps: 2

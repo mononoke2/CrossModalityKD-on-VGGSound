@@ -6,7 +6,7 @@ model:
   weights_path: pretrained_weights/mobilenet_v3_small.pth
 
 training:
-  batch_size: 128
+  batch_size: 64
   epochs: 30
   lr: 1e-4
   weight_decay: 1e-4
