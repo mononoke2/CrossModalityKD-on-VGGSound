@@ -279,7 +279,11 @@ def main() -> None:
 
     # -- Output dir ------------------------------------------------------
     model_type = model_cfg.get("type", "ast")
-    run_name = f"baseline_{model_type}" if model_type != "ast" else "baseline_audio"
+    if model_type == "ast":
+        run_name = "baseline_audio"
+    else:
+        model_suffix = model_type.replace("_audio", "")
+        run_name = f"baseline_{model_suffix}"
     output_dir = Path(args.output_dir) if args.output_dir else (
         _PROJECT_ROOT / "experiments" / "checkpoints" / run_name
     )
