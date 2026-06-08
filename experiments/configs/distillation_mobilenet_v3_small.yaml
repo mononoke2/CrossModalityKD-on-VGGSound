@@ -1,0 +1,7 @@
+extends: distillation_alpha_03.yaml
+
+student:
+  type: mobilenet_v3_small_audio
+  pretrained: true
+  weights_path: pretrained_weights/mobilenet_v3_small.pth
+  drop_rate: 0.2

@@ -93,8 +93,18 @@ def load_model(model_type: str, cfg: dict, checkpoint_path: str, device: torch.d
     elif model_type == "resnet50":
         from src.models.vision_teacher import build_vision_teacher
         model = build_vision_teacher(cfg)
+    elif model_type in ("efficientnet_b0_audio", "mobilenet_v3_small_audio"):
+        from src.models.light_audio_models import build_light_audio_student
+        eval_cfg = dict(cfg)
+        eval_cfg["model"] = dict(cfg.get("model", {}))
+        eval_cfg["model"]["pretrained"] = False
+        eval_cfg["model"]["weights_path"] = None
+        model = build_light_audio_student(model_type, eval_cfg)
     else:
-        raise ValueError(f"model_type non riconosciuto: {model_type!r}. Validi: 'ast', 'resnet50'.")
+        raise ValueError(
+            f"model_type non riconosciuto: {model_type!r}. "
+            "Validi: 'ast', 'resnet50', 'efficientnet_b0_audio', 'mobilenet_v3_small_audio'."
+        )
 
     ckpt = torch.load(checkpoint_path, map_location="cpu", weights_only=False)
     # Supporta i diversi formati di checkpoint del progetto:
@@ -374,8 +384,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--checkpoint", help="Path al checkpoint .pth da valutare (single-model).")
     parser.add_argument(
         "--model-type",
-        choices=["ast", "resnet50"],
-        help="Tipo di modello: 'ast' o 'resnet50' (single-model).",
+        choices=["ast", "resnet50", "efficientnet_b0_audio", "mobilenet_v3_small_audio"],
+        help="Tipo di modello (single-model).",
     )
     parser.add_argument(
         "--split",

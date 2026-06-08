@@ -1,0 +1,7 @@
+extends: distillation_alpha_03.yaml
+
+student:
+  type: efficientnet_b0_audio
+  pretrained: true
+  weights_path: pretrained_weights/efficientnet_b0.pth
+  drop_rate: 0.2

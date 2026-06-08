@@ -1,4 +1,4 @@
-"""Script di training per la Distillazione Cross-Modale (Fase 3) — Track 24.
+"""Script di training per la Distillazione Cross-Modale 
 
 Addestra un ``AudioSpectrogramTransformer`` (Student AST) usando la conoscenza
 trasferita da un ``VisionTeacher`` (ResNet-50) pre-addestrato e congelato.
@@ -65,6 +65,7 @@ if str(_PROJECT_ROOT) not in sys.path:
 
 from src.datasets.vggsound import VGGSoundDataset
 from src.models.ast_model import build_ast
+from src.models.light_audio_models import build_light_audio_student
 from src.models.vision_teacher import build_vision_teacher
 from src.training.losses import DistillationLoss, FeatureDistillationLoss
 from src.utils.early_stopping import EarlyStopping
@@ -166,6 +167,22 @@ def load_checkpoint(
     start_epoch = ckpt.get("epoch", 0) + 1
     print(f"[Resume] Checkpoint caricato da {path}. Ripresa dall'epoch {start_epoch}.")
     return start_epoch
+
+
+# ---------------------------------------------------------------------------
+# Factory student
+# ---------------------------------------------------------------------------
+
+def build_student(model_type: str, cfg: dict) -> nn.Module:
+    """Costruisce lo student corretto in base a ``model_type``.
+
+    ``"ast"`` usa il backbone ViT-B/16 (comportamento storico).
+    ``"efficientnet_b0_audio"`` e ``"mobilenet_v3_small_audio"`` usano i
+    backbone CNN leggeri definiti in ``light_audio_models.py`` (Extra 3).
+    """
+    if model_type == "ast":
+        return build_ast(cfg)
+    return build_light_audio_student(model_type, cfg)
 
 
 # ---------------------------------------------------------------------------
@@ -367,6 +384,12 @@ def parse_args() -> argparse.Namespace:
         help="Path al file YAML di configurazione.",
     )
     parser.add_argument(
+        "--student-type",
+        default="ast",
+        choices=["ast", "efficientnet_b0_audio", "mobilenet_v3_small_audio"],
+        help="Architettura dello student (default: 'ast').",
+    )
+    parser.add_argument(
         "--alpha",
         type=float,
         default=None,
@@ -485,9 +508,10 @@ def main() -> None:
 
     # -- Student (AST reinizializzato, stessa architettura della Fase 1) ------
     student_cfg = cfg.get("student", {})
+    student_type = args.student_type or student_cfg.get("type", "ast")
     student_build_cfg = {
         "model": {
-            "type": student_cfg.get("type", "ast"),
+            "type": student_type,
             "pretrained": student_cfg.get("pretrained", True),
             "weights_path": student_cfg.get("weights_path", None),
             "drop_rate": float(student_cfg.get("drop_rate", 0.1)),
@@ -495,7 +519,7 @@ def main() -> None:
         },
         "dataset": ds_cfg,
     }
-    student = build_ast(student_build_cfg).to(device)
+    student = build_student(student_type, student_build_cfg).to(device)
     logger.info("Student: %s", student)
 
     # -- Loss ----------------------------------------------------------------

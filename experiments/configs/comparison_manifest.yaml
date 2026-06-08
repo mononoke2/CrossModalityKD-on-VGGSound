@@ -63,3 +63,21 @@ models:
     model_type: ast
     modality: audio
     alpha: 0.9
+
+  - name: distill_efficientnet_b0
+    label: "EfficientNet-B0 KD (alpha=0.3)"
+    exp_id: EXP-007
+    config: experiments/configs/distillation_efficientnet_b0.yaml
+    checkpoint: experiments/checkpoints/distillation_efficientnet_b0/best.pth
+    model_type: efficientnet_b0_audio
+    modality: audio
+    alpha: 0.3
+
+  - name: distill_mobilenet_v3_small
+    label: "MobileNetV3-Small KD (alpha=0.3)"
+    exp_id: EXP-008
+    config: experiments/configs/distillation_mobilenet_v3_small.yaml
+    checkpoint: experiments/checkpoints/distillation_mobilenet_v3_small/best.pth
+    model_type: mobilenet_v3_small_audio
+    modality: audio
+    alpha: 0.3
