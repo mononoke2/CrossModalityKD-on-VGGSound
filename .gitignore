@@ -20,3 +20,5 @@ vggsound.csv
 /tools
 pretrained_weights/*.pth
 pretrained_weights/
+
+presentation_variants/

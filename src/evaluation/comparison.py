@@ -71,15 +71,15 @@ _ALPHA_COLOR = {
 }
 
 plt.rcParams.update({
-    "figure.facecolor": "#0d1117",
-    "axes.facecolor":   "#161b22",
-    "axes.edgecolor":   "#30363d",
-    "axes.labelcolor":  "#c9d1d9",
-    "axes.titlecolor":  "#f0f6fc",
-    "xtick.color":      "#c9d1d9",
-    "ytick.color":      "#c9d1d9",
-    "text.color":       "#c9d1d9",
-    "grid.color":       "#21262d",
+    "figure.facecolor": "#ffffff",
+    "axes.facecolor":   "#ffffff",
+    "axes.edgecolor":   "#cccccc",
+    "axes.labelcolor":  "#2D2A26",
+    "axes.titlecolor":  "#2D2A26",
+    "xtick.color":      "#2D2A26",
+    "ytick.color":      "#2D2A26",
+    "text.color":       "#2D2A26",
+    "grid.color":       "#e5e5e5",
     "grid.linewidth":   0.8,
     "font.family":      "sans-serif",
     "font.size":        11,
@@ -118,7 +118,7 @@ def plot_accuracy_comparison(models: list[dict], output_dir: Path) -> Path:
     width = 0.38
 
     fig, ax = plt.subplots(figsize=(13, 6))
-    fig.patch.set_facecolor("#0d1117")
+    fig.patch.set_facecolor("#ffffff")
 
     bars1 = ax.bar(x - width / 2, top1, width, color=colors, alpha=0.92, label="Top-1", zorder=3)
     bars5 = ax.bar(x + width / 2, top5, width, color=colors, alpha=0.50, label="Top-5",
@@ -128,11 +128,11 @@ def plot_accuracy_comparison(models: list[dict], output_dir: Path) -> Path:
     for bar in bars1:
         ax.text(bar.get_x() + bar.get_width() / 2, bar.get_height() + 0.5,
                 f"{bar.get_height():.1f}%", ha="center", va="bottom", fontsize=9,
-                color="#f0f6fc", fontweight="bold")
+                color="#2D2A26", fontweight="bold")
     for bar in bars5:
         ax.text(bar.get_x() + bar.get_width() / 2, bar.get_height() + 0.5,
                 f"{bar.get_height():.1f}%", ha="center", va="bottom", fontsize=8.5,
-                color="#8b949e")
+                color="#6E685E")
 
     # Linea baseline
     baseline_top1 = next(m["top1_acc"] for m in models if m["exp_id"] == "EXP-001")
@@ -176,15 +176,15 @@ def plot_efficiency_comparison(models: list[dict], output_dir: Path) -> Path:
 
     x = np.arange(len(labels))
     fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(14, 6))
-    fig.patch.set_facecolor("#0d1117")
+    fig.patch.set_facecolor("#ffffff")
     fig.suptitle("Efficienza dei Modelli — Model Size e Inference Latency", fontsize=14,
-                 fontweight="bold", color="#f0f6fc")
+                 fontweight="bold", color="#2D2A26")
 
     # --- Model Size ---
     bars = ax1.bar(x, sizes, color=colors, alpha=0.88, zorder=3)
     for bar, val in zip(bars, sizes):
         ax1.text(bar.get_x() + bar.get_width() / 2, bar.get_height() + 2,
-                 f"{val:.1f} MB", ha="center", va="bottom", fontsize=9, color="#f0f6fc")
+                 f"{val:.1f} MB", ha="center", va="bottom", fontsize=9, color="#2D2A26")
     ax1.set_xticks(x)
     ax1.set_xticklabels(labels, rotation=20, ha="right", fontsize=9)
     ax1.set_ylabel("Model Size (MB)")
@@ -197,7 +197,7 @@ def plot_efficiency_comparison(models: list[dict], output_dir: Path) -> Path:
     bars2 = ax2.bar(x, latency, color=colors, alpha=0.88, zorder=3)
     for bar, val in zip(bars2, latency):
         ax2.text(bar.get_x() + bar.get_width() / 2, bar.get_height() + 0.05,
-                 f"{val:.2f} ms", ha="center", va="bottom", fontsize=9, color="#f0f6fc")
+                 f"{val:.2f} ms", ha="center", va="bottom", fontsize=9, color="#2D2A26")
     ax2.set_xticks(x)
     ax2.set_xticklabels(labels, rotation=20, ha="right", fontsize=9)
     ax2.set_ylabel("Latenza Inferenza (ms)")
@@ -230,12 +230,12 @@ def plot_ablation_alpha(models: list[dict], output_dir: Path) -> Path:
     baseline_top1 = next((_pct(m["top1_acc"]) for m in models if m["exp_id"] == "EXP-001"), None)
 
     fig, ax = plt.subplots(figsize=(9, 6))
-    fig.patch.set_facecolor("#0d1117")
+    fig.patch.set_facecolor("#ffffff")
 
     # Curva con punti colorati
-    ax.plot(alphas, top1, color="#c9d1d9", linewidth=2, zorder=2, marker="")
+    ax.plot(alphas, top1, color="#2D2A26", linewidth=2, zorder=2, marker="")
     for a, t, c in zip(alphas, top1, colors):
-        ax.scatter(a, t, color=c, s=120, zorder=4, edgecolors="#f0f6fc", linewidths=1.5)
+        ax.scatter(a, t, color=c, s=120, zorder=4, edgecolors="#ffffff", linewidths=1.5)
         ax.text(a, t + 0.25, f"{t:.2f}%", ha="center", va="bottom",
                 fontsize=10, color=c, fontweight="bold")
 
@@ -252,8 +252,8 @@ def plot_ablation_alpha(models: list[dict], output_dir: Path) -> Path:
     ax.annotate(f"Best α={alphas[best_idx]}\n{top1[best_idx]:.2f}%",
                 xy=(alphas[best_idx], top1[best_idx]),
                 xytext=(alphas[best_idx] + 0.04, top1[best_idx] - 0.8),
-                fontsize=9, color="#f0f6fc",
-                arrowprops=dict(arrowstyle="->", color="#8b949e", lw=1.2))
+                fontsize=9, color="#2D2A26",
+                arrowprops=dict(arrowstyle="->", color="#6E685E", lw=1.2))
 
     ax.set_xlabel("Peso di Distillazione α")
     ax.set_ylabel("Top-1 Test Accuracy (%)")
@@ -293,7 +293,7 @@ def plot_confusion_matrix_comparison(
     class_names: list[str] | None = None,
 ) -> Path | None:
     cm_baseline = _load_confusion_matrix(models_raw, "EXP-001")
-    cm_best     = _load_confusion_matrix(models_raw, "EXP-003")   # α=0.3 è il best su test
+    cm_best     = _load_confusion_matrix(models_raw, "EXP-005")   # α=0.7 è il best su test
 
     if cm_baseline is None or cm_best is None:
         print("[WARN] Confusion matrix non disponibile nel JSON — salto il plot side-by-side.")
@@ -312,21 +312,21 @@ def plot_confusion_matrix_comparison(
     cm_s_norm = _norm(cm_best)
 
     fig, axes = plt.subplots(1, 2, figsize=(20, 9))
-    fig.patch.set_facecolor("#0d1117")
-    fig.suptitle("Confusion Matrix — Baseline Audio vs Student KD (α=0.3, Best)",
-                 fontsize=14, fontweight="bold", color="#f0f6fc", y=1.01)
+    fig.patch.set_facecolor("#ffffff")
+    fig.suptitle("Confusion Matrix — Baseline Audio vs Student KD (α=0.7, Best)",
+                 fontsize=14, fontweight="bold", color="#2D2A26", y=1.01)
 
     tick_labels = [c[:18] for c in class_names]   # Tronca etichette lunghe
 
     for ax, cm_norm, title in [
         (axes[0], cm_b_norm, "AST Audio Baseline (EXP-001)"),
-        (axes[1], cm_s_norm, "Student KD α=0.3 (EXP-003)"),
+        (axes[1], cm_s_norm, "Student KD α=0.7 (EXP-005)"),
     ]:
         im = ax.imshow(cm_norm, interpolation="nearest", cmap="Blues", vmin=0, vmax=1)
         fig.colorbar(im, ax=ax, fraction=0.046, pad=0.04)
-        ax.set_title(title, color="#f0f6fc", fontsize=12)
-        ax.set_xlabel("Classe Predetta", color="#c9d1d9")
-        ax.set_ylabel("Classe Reale", color="#c9d1d9")
+        ax.set_title(title, color="#2D2A26", fontsize=12)
+        ax.set_xlabel("Classe Predetta", color="#2D2A26")
+        ax.set_ylabel("Classe Reale", color="#2D2A26")
         ax.set_xticks(range(n))
         ax.set_yticks(range(n))
         ax.set_xticklabels(tick_labels, rotation=45, ha="right", fontsize=7)
@@ -337,7 +337,7 @@ def plot_confusion_matrix_comparison(
             thresh = 0.5
             for i in range(n):
                 for j in range(n):
-                    color = "white" if cm_norm[i, j] > thresh else "#adb5bd"
+                    color = "white" if cm_norm[i, j] > thresh else "#2D2A26"
                     ax.text(j, i, f"{cm_norm[i, j]:.2f}",
                             ha="center", va="center", fontsize=5.5, color=color)
 
@@ -355,7 +355,7 @@ def plot_confusion_matrix_comparison(
 
 def plot_tradeoff_comparison(models: list[dict], output_dir: Path) -> Path:
     fig, ax = plt.subplots(figsize=(10, 7))
-    fig.patch.set_facecolor("#0d1117")
+    fig.patch.set_facecolor("#ffffff")
 
     for m in models:
         exp_id = m["exp_id"]
@@ -376,7 +376,7 @@ def plot_tradeoff_comparison(models: list[dict], output_dir: Path) -> Path:
             marker = "o"  # Circle per Baseline
 
         ax.scatter(latency, acc, color=color, s=marker_size, marker=marker,
-                   zorder=4, edgecolors="#f0f6fc", linewidths=1.0, alpha=0.9)
+                   zorder=4, edgecolors="#ffffff", linewidths=1.0, alpha=0.9)
 
         # Spostamento del testo per evitare sovrapposizioni
         offset_y = 0.4
