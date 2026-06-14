@@ -73,7 +73,7 @@ class AudioSpectrogramTransformer(nn.Module):
         n_mels: Numero di bande Mel (asse frequenza). Default 128.
         target_length: Numero di frame temporali (asse tempo). Default 1024.
         drop_rate: Dropout applicato prima del classification head.
-        freeze_backbone: Se ``True``, congela il backbone (solo il head è
+        freeze_backbone: Se ``True``, congela il backbone (solo head è
             trainable). Utile per warm-up iniziale o ablation study.
     """
 
@@ -191,7 +191,7 @@ class AudioSpectrogramTransformer(nn.Module):
         vit.encoder.pos_embedding = nn.Parameter(new_pos_embed)
 
     def _freeze_backbone(self) -> None:
-        """Congela tutti i parametri del backbone (solo il head è trainable)."""
+        """Congela tutti i parametri del backbone (solo head è trainable)."""
         for param in self.backbone.parameters():
             param.requires_grad = False
 

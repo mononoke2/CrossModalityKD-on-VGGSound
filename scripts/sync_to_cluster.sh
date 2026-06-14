@@ -81,7 +81,6 @@ done
 EXCLUDES=(
   --exclude '.git/'
   --exclude '.venv/'
-  --exclude 'docs/EXPERIMENT_LOG.md'
   --exclude 'venv/'
   --exclude '__pycache__/'
   --exclude '*.pyc'

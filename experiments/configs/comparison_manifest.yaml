@@ -81,3 +81,19 @@ models:
     model_type: mobilenet_v3_small_audio
     modality: audio
     alpha: 0.3
+
+  - name: baseline_efficientnet_b0
+    label: "EfficientNet-B0 Baseline"
+    exp_id: EXP-009
+    config: experiments/configs/baseline_audio_efficientnet_b0.yaml
+    checkpoint: experiments/checkpoints/baseline_efficientnet_b0/best.pth
+    model_type: efficientnet_b0_audio
+    modality: audio
+
+  - name: baseline_mobilenet_v3_small
+    label: "MobileNetV3-Small Baseline"
+    exp_id: EXP-010
+    config: experiments/configs/baseline_audio_mobilenet_v3_small.yaml
+    checkpoint: experiments/checkpoints/baseline_mobilenet_v3_small/best.pth
+    model_type: mobilenet_v3_small_audio
+    modality: audio
