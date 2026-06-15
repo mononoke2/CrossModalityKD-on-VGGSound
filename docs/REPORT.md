@@ -1,9 +1,6 @@
 # Cross-Modal Knowledge Distillation (Audio → Vision) on VGGSound
 - **Group ID**: Zero e Uno
 - **Project ID**: Track 24
-# Cross-Modal Knowledge Distillation (Audio → Vision) on VGGSound
-- **Group ID**: Zero e Uno
-- **Project ID**: Track 24
 
 ---
 
