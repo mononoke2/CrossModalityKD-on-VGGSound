@@ -21,4 +21,7 @@ vggsound.csv
 pretrained_weights/*.pth
 pretrained_weights/
 
-presentation_variants/
+node_modules/
+package-lock.json
+package.json
+*.mjs

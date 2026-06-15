@@ -1,0 +1,2068 @@
+<!DOCTYPE html>
+<html lang="it">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Track 24: Cross-Modal Knowledge Distillation (Audio to Vision)</title>
+
+    <!-- Google Fonts per l'estetica 8-Bit Orbit -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link
+        href="https://fonts.googleapis.com/css2?family=Tektur:wght@700;900&family=Chakra+Petch:wght@400;500;700&family=Space+Mono:wght@400;700&display=swap"
+        rel="stylesheet">
+
+    <style>
+        /* ===========================================
+           CSS CUSTOM PROPERTIES (8-BIT ORBIT THEME)
+           =========================================== */
+        :root {
+            --bg-void: #FAF7F2;
+            /* Sfondo principale avorio caldo retro-computing */
+            --bg-navy: #EAE4D9;
+            /* Sabbia chiaro retro per card */
+            --neon-cyan: #0A7874;
+            /* Verde giada / petrolio scuro per massima leggibilità */
+            --neon-pink: #C23B22;
+            /* Rosso mattone / corallo retro (stile pulsanti NES) */
+            --neon-yellow: #A86F00;
+            /* Ambra/oro antico scuro */
+            --soft-lavender: #6E685E;
+            /* Grigio-tortora per testi secondari */
+            --white: #2D2A26;
+            /* Cioccolato fondente / ardesia caldo per il testo principale */
+
+            /* Typography */
+            --font-display: 'Tektur', cursive;
+            --font-body: 'Chakra Petch', sans-serif;
+            --font-mono: 'Space Mono', monospace;
+
+            /* Spacing */
+            --pixel-unit: 4px;
+            --slide-padding-y: 50px;
+            --slide-padding-x: 80px;
+
+            /* Transitions */
+            --ease-out-expo: cubic-bezier(0.16, 1, 0.3, 1);
+            --duration-normal: 0.6s;
+
+            /* Stage scale */
+            --stage-scale: 1;
+        }
+
+        /* ===========================================
+           FIXED 16:9 STAGE: MANDATORY BASE STYLES
+           =========================================== */
+        html,
+        body {
+            width: 100%;
+            height: 100%;
+            margin: 0;
+            overflow: hidden;
+            background: #000;
+            font-family: var(--font-body);
+            color: var(--white);
+            cursor: crosshair;
+        }
+
+        .deck-viewport {
+            position: fixed;
+            inset: 0;
+            overflow: hidden;
+            background: #000;
+        }
+
+        .deck-stage {
+            position: absolute;
+            left: 0;
+            top: 0;
+            width: 1920px;
+            height: 1080px;
+            overflow: hidden;
+            transform-origin: 0 0;
+            background: var(--bg-void);
+        }
+
+        .slide {
+            position: absolute;
+            inset: 0;
+            width: 1920px;
+            height: 1080px;
+            overflow: hidden;
+            display: block;
+            visibility: hidden;
+            opacity: 0;
+            pointer-events: none;
+            background: var(--bg-void);
+            padding: var(--slide-padding-y) var(--slide-padding-x);
+            box-sizing: border-box;
+        }
+
+        .slide.active,
+        .slide.visible {
+            visibility: visible;
+            opacity: 1;
+            pointer-events: auto;
+            z-index: 1;
+        }
+
+        img,
+        video,
+        canvas,
+        svg {
+            max-width: 100%;
+            max-height: 100%;
+            object-fit: contain;
+        }
+
+        /* ===========================================
+           ATMOSPHERIC CRT & GRAPHICS OVERLAYS
+           =========================================== */
+        /* Sfondo griglia */
+        .bg-grid {
+            position: absolute;
+            inset: 0;
+            background-color: var(--bg-void);
+            background-image:
+                linear-gradient(rgba(10, 120, 116, 0.08) 1px, transparent 1px),
+                linear-gradient(90deg, rgba(10, 120, 116, 0.08) 1px, transparent 1px);
+            background-size: 40px 40px;
+            z-index: 0;
+            pointer-events: none;
+        }
+
+        /* Overlay CRT Scanlines */
+        .scanlines {
+            position: absolute;
+            inset: 0;
+            background: repeating-linear-gradient(0deg,
+                    transparent,
+                    transparent 2px,
+                    rgba(45, 42, 38, 0.03) 2px,
+                    rgba(45, 42, 38, 0.03) 4px);
+            pointer-events: none;
+            z-index: 50;
+        }
+
+        /* Overlay Grain statico */
+        .grain {
+            position: absolute;
+            inset: 0;
+            background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.65' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)' opacity='0.035'/%3E%3C/svg%3E");
+            pointer-events: none;
+            z-index: 49;
+        }
+
+        /* Vignetta CRT */
+        .crt-glow {
+            position: absolute;
+            inset: 0;
+            background: radial-gradient(ellipse at center, transparent 40%, rgba(45, 42, 38, 0.04) 100%);
+            pointer-events: none;
+            z-index: 51;
+        }
+
+        /* Starfield stellato */
+        .starfield {
+            position: absolute;
+            inset: 0;
+            overflow: hidden;
+            pointer-events: none;
+            z-index: 1;
+        }
+
+        .star {
+            position: absolute;
+            width: 4px;
+            height: 4px;
+            background-color: var(--neon-cyan);
+            opacity: 0.7;
+        }
+
+        .star.pink {
+            background-color: var(--neon-pink);
+        }
+
+        .star.yellow {
+            background-color: var(--neon-yellow);
+        }
+
+        @keyframes twinkle {
+
+            0%,
+            100% {
+                opacity: 0.2;
+                transform: scale(0.8);
+            }
+
+            50% {
+                opacity: 1;
+                transform: scale(1.2);
+            }
+        }
+
+        /* Particelle galleggianti */
+        .pixel-particle {
+            position: absolute;
+            width: 8px;
+            height: 8px;
+            pointer-events: none;
+            z-index: 2;
+            opacity: 0.6;
+        }
+
+        @keyframes float-up {
+            0% {
+                transform: translateY(1080px) rotate(0deg);
+                opacity: 0;
+            }
+
+            10% {
+                opacity: 0.6;
+            }
+
+            90% {
+                opacity: 0.6;
+            }
+
+            100% {
+                transform: translateY(-100px) rotate(360deg);
+                opacity: 0;
+            }
+        }
+
+        /* ===========================================
+           TYPOGRAPHY & SIGNATURE TREATMENTS
+           =========================================== */
+        h1,
+        h2,
+        h3,
+        h4 {
+            font-family: var(--font-display);
+            text-transform: uppercase;
+            letter-spacing: 0.04em;
+        }
+
+        /* Ombra di testo 8-bit distintiva */
+        .pixel-hero {
+            font-size: 96px;
+            font-weight: 900;
+            color: var(--neon-cyan);
+            text-shadow:
+                4px 4px 0 var(--neon-yellow),
+                8px 8px 0 var(--bg-navy);
+            line-height: 1.1;
+            margin-bottom: 20px;
+        }
+
+        .pixel-title {
+            font-size: 64px;
+            font-weight: 700;
+            color: var(--neon-cyan);
+            text-shadow: 3px 3px 0 var(--bg-navy);
+            margin-bottom: 30px;
+            position: relative;
+            display: inline-block;
+        }
+
+        .pixel-title::after {
+            content: '';
+            position: absolute;
+            bottom: -8px;
+            left: 0;
+            width: 120px;
+            height: 4px;
+            background-color: var(--neon-yellow);
+            box-shadow: 3px 3px 0 var(--bg-navy);
+        }
+
+        p {
+            font-size: 26px;
+            line-height: 1.6;
+            color: var(--white);
+            margin-bottom: 20px;
+        }
+
+        .mono-text {
+            font-family: var(--font-mono);
+            letter-spacing: 0.05em;
+        }
+
+        .hud-label {
+            font-family: var(--font-mono);
+            font-size: 18px;
+            font-weight: 700;
+            color: var(--neon-pink);
+            letter-spacing: 0.15em;
+            text-transform: uppercase;
+            display: block;
+            margin-bottom: 12px;
+        }
+
+        /* ===========================================
+           COMPONENTS (8-BIT ORBIT DESIGN SYSTEM)
+           =========================================== */
+        /* Parentesi d'angolo decorative */
+        .bracket-box {
+            position: relative;
+            background: rgba(234, 228, 217, 0.95);
+            /* Sfondo card beige caldo retro */
+            border: 2px solid rgba(10, 120, 116, 0.45);
+            /* Bordo ciano retro-scuro verde giada */
+            padding: 36px;
+            box-sizing: border-box;
+            box-shadow: 8px 8px 0 rgba(45, 42, 38, 0.12);
+            /* Ombra calda cioccolato */
+        }
+
+        .bracket-box::before,
+        .bracket-box::after {
+            content: '';
+            position: absolute;
+            width: 24px;
+            height: 24px;
+            border: 4px solid var(--neon-cyan);
+            pointer-events: none;
+        }
+
+        .bracket-box::before {
+            top: -6px;
+            left: -6px;
+            border-right: none;
+            border-bottom: none;
+        }
+
+        .bracket-box::after {
+            bottom: -6px;
+            right: -6px;
+            border-left: none;
+            border-top: none;
+        }
+
+        /* Variante box con angoli rosa */
+        .bracket-box.pink-corners::before,
+        .bracket-box.pink-corners::after {
+            border-color: var(--neon-pink);
+        }
+
+        /* Variante box con angoli gialli */
+        .bracket-box.yellow-corners::before,
+        .bracket-box.yellow-corners::after {
+            border-color: var(--neon-yellow);
+        }
+
+        /* Label pill */
+        .label-pill {
+            display: inline-block;
+            background: var(--bg-navy);
+            color: var(--neon-yellow);
+            padding: 8px 20px;
+            font-family: var(--font-mono);
+            font-size: 16px;
+            font-weight: 700;
+            letter-spacing: 0.15em;
+            text-transform: uppercase;
+            margin-bottom: 24px;
+            border: 2px solid rgba(255, 229, 76, 0.5);
+            box-shadow: 4px 4px 0 rgba(0, 0, 0, 0.3);
+        }
+
+        .label-pill.cyan-text {
+            color: var(--neon-cyan);
+            border-color: rgba(114, 229, 252, 0.5);
+        }
+
+        .label-pill.pink-text {
+            color: var(--neon-pink);
+            border-color: rgba(255, 167, 209, 0.5);
+        }
+
+        /* Bottone in pixel art */
+        .pixel-button {
+            display: inline-block;
+            background: var(--neon-cyan);
+            color: var(--bg-void);
+            padding: 16px 36px;
+            font-family: var(--font-display);
+            font-weight: 700;
+            font-size: 16px;
+            letter-spacing: 0.08em;
+            text-transform: uppercase;
+            border: none;
+            cursor: pointer;
+            outline: none;
+            box-shadow:
+                4px 0 0 0 var(--bg-navy),
+                0 4px 0 0 var(--bg-navy),
+                4px 4px 0 0 var(--bg-navy),
+                8px 4px 0 0 var(--neon-yellow),
+                4px 8px 0 0 var(--neon-yellow),
+                8px 8px 0 0 var(--neon-yellow);
+            transition: transform 0.1s ease, box-shadow 0.1s ease;
+        }
+
+        .pixel-button:hover {
+            transform: translate(2px, 2px);
+            box-shadow:
+                2px 0 0 0 var(--bg-navy),
+                0 2px 0 0 var(--bg-navy),
+                2px 2px 0 0 var(--bg-navy),
+                4px 2px 0 0 var(--neon-yellow),
+                2px 4px 0 0 var(--neon-yellow),
+                4px 4px 0 0 var(--neon-yellow);
+        }
+
+        /* Stat block */
+        .stat-block {
+            background: rgba(10, 120, 116, 0.06);
+            border: 2px solid rgba(10, 120, 116, 0.25);
+            padding: 24px;
+            text-align: center;
+            position: relative;
+        }
+
+        .stat-block::before,
+        .stat-block::after {
+            content: '';
+            position: absolute;
+            width: 16px;
+            height: 16px;
+            border: 3px solid var(--neon-cyan);
+        }
+
+        .stat-block::before {
+            top: -4px;
+            left: -4px;
+            border-right: none;
+            border-bottom: none;
+        }
+
+        .stat-block::after {
+            bottom: -4px;
+            right: -4px;
+            border-left: none;
+            border-top: none;
+        }
+
+        .stat-number {
+            font-family: var(--font-display);
+            font-size: 60px;
+            /* Aumentato da 48px */
+            font-weight: 900;
+            color: var(--neon-cyan);
+            text-shadow: 3px 3px 0 var(--bg-navy);
+            line-height: 1;
+            margin-bottom: 8px;
+        }
+
+        .stat-number.pink {
+            color: var(--neon-pink);
+        }
+
+        .stat-number.yellow {
+            color: var(--neon-yellow);
+        }
+
+        .stat-label {
+            font-family: var(--font-mono);
+            font-size: 15px;
+            /* Aumentato da 11px */
+            text-transform: uppercase;
+            letter-spacing: 0.1em;
+            color: var(--neon-pink);
+        }
+
+        /* Badge HUD */
+        .hud-badge {
+            display: inline-block;
+            border: 2px solid var(--neon-yellow);
+            color: var(--neon-yellow);
+            padding: 8px 18px;
+            font-family: var(--font-mono);
+            font-size: 16px;
+            /* Aumentato da 12px */
+            font-weight: 700;
+            letter-spacing: 0.1em;
+            text-transform: uppercase;
+            background: transparent;
+        }
+
+        /* ===========================================
+           SLIDE SPECIFIC LAYOUTS
+           =========================================== */
+        .slide-content {
+            position: relative;
+            z-index: 10;
+            height: 100%;
+            display: flex;
+            flex-direction: column;
+            justify-content: flex-start;
+        }
+
+        /* Layout split a colonne */
+        .grid-2 {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 40px;
+            align-items: start;
+        }
+
+        .grid-3 {
+            display: grid;
+            grid-template-columns: 1fr 1fr 1fr;
+            gap: 24px;
+            align-items: start;
+        }
+
+        .flex-grow {
+            flex-grow: 1;
+        }
+
+        /* Copertina slide */
+        .cover-content {
+            justify-content: center;
+            align-items: center;
+            text-align: center;
+            height: 100%;
+        }
+
+        /* Speaker tag in alto a sinistra/destra */
+        .speaker-tag {
+            position: absolute;
+            top: 20px;
+            right: 80px;
+            font-family: var(--font-mono);
+            font-size: 16px;
+            /* Aumentato da 12px */
+            color: var(--neon-pink);
+            letter-spacing: 0.15em;
+            text-transform: uppercase;
+            background: rgba(234, 228, 217, 0.95);
+            padding: 6px 16px;
+            border-left: 4px solid var(--neon-pink);
+            z-index: 20;
+        }
+
+        /* Immagini per slides */
+        .figure-container {
+            width: 100%;
+            height: 450px;
+            background: #FFFFFF;
+            /* Reso bianco puro per far sparire lo stacco visivo del grafico */
+            border: 3px dashed var(--neon-cyan);
+            /* Bordo tratteggiato ciano più spesso e visibile */
+            border-radius: 12px;
+            /* Angoli arrotondati per uniformità estetica */
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            overflow: hidden;
+            padding: 16px;
+            box-sizing: border-box;
+            box-shadow: 6px 6px 0 rgba(0, 0, 0, 0.4);
+            /* Ombra solida in stile 8-bit */
+        }
+
+        .figure-container img {
+            max-width: 100%;
+            max-height: 100%;
+            object-fit: contain;
+            /* Rimosso il drop-shadow scuro per garantire che lo sfondo del grafico si integri in modo pulitissimo */
+        }
+
+        /* Tabella stili */
+        .pixel-table {
+            width: 100%;
+            border-collapse: collapse;
+            font-family: var(--font-body);
+            background: rgba(234, 228, 217, 0.95);
+            border: 2px solid rgba(10, 120, 116, 0.3);
+        }
+
+        .pixel-table th {
+            background: var(--bg-navy);
+            color: var(--neon-cyan);
+            font-family: var(--font-mono);
+            text-transform: uppercase;
+            letter-spacing: 0.1em;
+            padding: 16px;
+            text-align: left;
+            border-bottom: 3px solid var(--neon-cyan);
+            font-size: 18px;
+            /* Aumentato da 13px */
+        }
+
+        .pixel-table td {
+            padding: 16px;
+            border-bottom: 1px solid rgba(10, 120, 116, 0.15);
+            font-size: 20px;
+            /* Aumentato da 16px */
+        }
+
+        .pixel-table tr:hover {
+            background: rgba(10, 120, 116, 0.05);
+        }
+
+        .pixel-table tr.highlight {
+            background: rgba(168, 111, 0, 0.12);
+            font-weight: bold;
+        }
+
+        .pixel-table tr.highlight td {
+            border-top: 2px solid var(--neon-yellow);
+            border-bottom: 2px solid var(--neon-yellow);
+            color: var(--neon-yellow);
+        }
+
+        /* Liste 8-bit */
+        .pixel-list {
+            list-style: none;
+            padding: 0;
+            margin: 0;
+        }
+
+        .pixel-list li {
+            position: relative;
+            padding-left: 32px;
+            margin-bottom: 18px;
+            font-size: 24px;
+            /* Aumentato da 19px */
+            line-height: 1.5;
+        }
+
+        .pixel-list li::before {
+            content: "▶";
+            position: absolute;
+            left: 0;
+            top: 4px;
+            color: var(--neon-cyan);
+            font-size: 18px;
+            /* Aumentato da 14px */
+            line-height: 1.5;
+        }
+
+        .pixel-list.pink-list li::before {
+            color: var(--neon-pink);
+        }
+
+        .pixel-list.yellow-list li::before {
+            color: var(--neon-yellow);
+        }
+
+        /* Timeline */
+        .timeline-rail {
+            position: relative;
+            padding-left: 40px;
+        }
+
+        .timeline-rail::before {
+            content: '';
+            position: absolute;
+            left: 10px;
+            top: 10px;
+            bottom: 10px;
+            width: 4px;
+            background: repeating-linear-gradient(to bottom,
+                    var(--neon-cyan) 0px,
+                    var(--neon-cyan) 12px,
+                    transparent 12px,
+                    transparent 20px);
+        }
+
+        .timeline-item {
+            position: relative;
+            margin-bottom: 30px;
+        }
+
+        .timeline-node {
+            position: absolute;
+            left: -37px;
+            top: 4px;
+            width: 18px;
+            height: 18px;
+            background: var(--bg-void);
+            border: 4px solid var(--neon-pink);
+            box-shadow: 2px 2px 0 var(--bg-navy);
+        }
+
+        .timeline-item.active .timeline-node {
+            border-color: var(--neon-yellow);
+            background: var(--neon-yellow);
+        }
+
+        .timeline-date {
+            display: inline-block;
+            background: var(--bg-navy);
+            color: var(--neon-cyan);
+            font-family: var(--font-mono);
+            font-size: 16px;
+            /* Aumentato da 11px */
+            padding: 4px 10px;
+            text-transform: uppercase;
+            margin-bottom: 8px;
+        }
+
+        /* Pixel art paesaggio montano (in fondo alla copertina / conclusione) */
+        .pixel-landscape {
+            position: absolute;
+            bottom: 0;
+            left: 0;
+            right: 0;
+            height: 120px;
+            z-index: 1;
+            pointer-events: none;
+            overflow: hidden;
+            opacity: 0.25;
+        }
+
+        /* Diagrammi semplici per l'architettura */
+        .arch-diagram {
+            display: flex;
+            align-items: center;
+            justify-content: space-around;
+            background: rgba(234, 228, 217, 0.95);
+            border: 2px solid rgba(10, 120, 116, 0.25);
+            padding: 40px 20px;
+            position: relative;
+        }
+
+        .arch-node {
+            background: var(--bg-navy);
+            border: 3px solid var(--neon-cyan);
+            padding: 18px 24px;
+            text-align: center;
+            font-weight: bold;
+            box-shadow: 4px 4px 0 rgba(0, 0, 0, 0.4);
+            z-index: 5;
+        }
+
+        .arch-node.teacher {
+            border-color: var(--neon-pink);
+        }
+
+        .arch-node.student {
+            border-color: var(--neon-yellow);
+        }
+
+        .arch-arrow {
+            font-family: var(--font-mono);
+            font-size: 24px;
+            color: var(--neon-cyan);
+            font-weight: bold;
+        }
+
+        /* ===========================================
+           PERSISTENT DECK CHROME (Outside Slide Stage)
+           =========================================== */
+        .deck-controls {
+            position: fixed;
+            bottom: 22px;
+            left: 50%;
+            transform: translateX(-50%);
+            display: flex;
+            align-items: center;
+            gap: 16px;
+            z-index: 1000;
+            background: rgba(234, 228, 217, 0.95);
+            padding: 6px 16px;
+            border: 2px solid var(--neon-cyan);
+            box-shadow: 4px 4px 0 rgba(45, 42, 38, 0.2);
+        }
+
+        .deck-controls button {
+            background: transparent;
+            border: none;
+            color: var(--neon-cyan);
+            font-family: var(--font-mono);
+            font-size: 16px;
+            font-weight: bold;
+            cursor: pointer;
+            padding: 4px 8px;
+        }
+
+        .deck-controls button:hover {
+            color: var(--neon-yellow);
+        }
+
+        .deck-progress-info {
+            color: var(--white);
+            font-family: var(--font-mono);
+            font-size: 16px;
+            /* Aumentato da 12px */
+            letter-spacing: 0.1em;
+        }
+
+        .nav-hint {
+            position: absolute;
+            bottom: 24px;
+            right: 40px;
+            font-family: var(--font-mono);
+            font-size: 15px;
+            /* Aumentato da 11px */
+            color: var(--white);
+            opacity: 0.65;
+            /* Aumentata l'opacità per massima visibilità */
+            letter-spacing: 0.1em;
+            z-index: 100;
+        }
+
+        /* ===========================================
+           ANIMATION REVEAL SYSTEM
+           =========================================== */
+        .reveal {
+            opacity: 0;
+            transform: translateY(24px);
+            transition: opacity var(--duration-normal) var(--ease-out-expo),
+                transform var(--duration-normal) var(--ease-out-expo);
+        }
+
+        .slide.visible .reveal {
+            opacity: 1;
+            transform: translateY(0);
+        }
+
+        .reveal.stagger-1 {
+            transition-delay: 0.1s;
+        }
+
+        .reveal.stagger-2 {
+            transition-delay: 0.2s;
+        }
+
+        .reveal.stagger-3 {
+            transition-delay: 0.3s;
+        }
+
+        .reveal.stagger-4 {
+            transition-delay: 0.4s;
+        }
+
+        .reveal.stagger-5 {
+            transition-delay: 0.5s;
+        }
+
+        .reveal.stagger-6 {
+            transition-delay: 0.6s;
+        }
+
+        /* ===========================================
+           INLINE EDITING SYSTEM
+           =========================================== */
+        .edit-hotzone {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 60px;
+            height: 60px;
+            z-index: 10000;
+            cursor: pointer;
+        }
+
+        .edit-toggle {
+            position: fixed;
+            top: 16px;
+            left: 16px;
+            background: var(--bg-navy);
+            color: var(--neon-yellow);
+            border: 2px solid var(--neon-yellow);
+            box-shadow: 3px 3px 0 rgba(0, 0, 0, 0.4);
+            padding: 8px 12px;
+            font-family: var(--font-mono);
+            font-size: 12px;
+            font-weight: bold;
+            cursor: pointer;
+            opacity: 0;
+            pointer-events: none;
+            transition: opacity 0.3s ease;
+            z-index: 10001;
+            text-transform: uppercase;
+        }
+
+        .edit-toggle.show,
+        .edit-toggle.active {
+            opacity: 1;
+            pointer-events: auto;
+        }
+
+        .edit-toggle.active {
+            background: var(--neon-yellow);
+            color: var(--bg-void);
+        }
+
+        [contenteditable="true"] {
+            outline: 2px dashed var(--neon-yellow) !important;
+            background: rgba(244, 208, 63, 0.08);
+            padding: 2px;
+        }
+    </style>
+</head>
+
+<body>
+    <div class="edit-hotzone"></div>
+    <button class="edit-toggle" id="editToggle" title="Modifica testo (Tasto E)">Edit Mode (E)</button>
+
+    <div class="deck-viewport">
+        <!-- Paesaggio montano fisso in basso sul background per lo stile -->
+        <div class="pixel-landscape" id="pixelLandscape"></div>
+
+        <!-- CRT scanline, grain, vignette -->
+        <div class="bg-grid"></div>
+        <div class="starfield" id="starfield"></div>
+        <div class="scanlines"></div>
+        <div class="grain"></div>
+        <div class="crt-glow"></div>
+
+        <main class="deck-stage" id="deckStage">
+
+            <!-- ===========================================
+               SLIDE 1: COPERTINA (Speaker A: Denise)
+               =========================================== -->
+            <section class="slide title-slide active" id="slide1">
+                <div class="slide-content cover-content">
+                    <div class="label-pill reveal">Track 24: Cross-Modal Knowledge Distillation Audio &rarr; Vision on
+                        VGGSound</div>
+
+                    <h1 class="pixel-hero reveal stagger-1" style="font-size: 72px;">Cross-Modal<br>Knowledge
+                        Distillation</h1>
+                    <p class="reveal stagger-2 mono-text"
+                        style="color: var(--neon-yellow); font-weight: bold; font-size: 24px; letter-spacing: 0.1em; text-transform: uppercase; margin-bottom: 40px;">
+                        Audio &rarr; Vision Classification Model
+                    </p>
+
+                    <div class="bracket-box reveal stagger-3" style="max-width: 900px; padding: 20px 40px;">
+                        <p style="margin: 0; font-size: 20px;">
+                            Corso: <span style="color: var(--neon-cyan); font-weight: bold;">Deep Learning: Advanced
+                                Models and Methods (DL26)</span>
+                        </p>
+                        <p style="margin: 8px 0 0 0; font-size: 18px; color: var(--soft-lavender);">
+                            Gruppo: <span style="color: var(--neon-pink); font-weight: bold;">Zero e Uno</span> &mdash;
+                            Denise Cilia, Eleonora Giuffrida
+                        </p>
+                        <p
+                            style="margin: 12px 0 0 0; font-size: 14px; font-family: var(--font-mono); color: var(--neon-cyan);">
+                            Repo: github.com/mononoke2/dl26-projects
+                        </p>
+                    </div>
+                </div>
+            </section>
+
+            <!-- ===========================================
+               SLIDE 2: HOOK (Speaker A: Denise)
+               =========================================== -->
+            <section class="slide" id="slide2">
+                <div class="speaker-tag">Speaker: Denise</div>
+                <div class="slide-content">
+                    <h2 class="pixel-title reveal">Il problema in una frase</h2>
+
+                    <div class="grid-2 flex-grow"
+                        style="margin-top: 15px; transform: translateY(-15px); grid-template-columns: 5.5fr 4.5fr; gap: 30px; max-width: 1000px; margin-left: auto; margin-right: auto; align-items: center;">
+                        <div class="bracket-box yellow-corners reveal stagger-1"
+                            style="display: flex; flex-direction: column; justify-content: center; padding: 24px; min-height: 480px;">
+                            <p
+                                style="font-family: var(--font-display); font-size: 32px; line-height: 1.4; color: var(--neon-yellow); margin-bottom: 24px; text-shadow: 2px 2px 0 var(--bg-void);">
+                                &ldquo;Video al training, solo audio in produzione: il teacher visivo può migliorare lo
+                                student audio?&rdquo;
+                            </p>
+                            <p style="font-size: 20px; line-height: 1.45;">
+                                VGGSound è un dataset che accoppia ogni clip audio al corrispondente video: ogni suono
+                                ha una controparte visiva. Sfruttiamo questa ricchezza <strong>solo durante il
+                                    training</strong>, usando un teacher visivo che osserva i frame e trasferisce
+                                la propria <strong><em>"dark knowledge"</em></strong> allo student audio (AST) tramite
+                                knowledge distillation. Una volta concluso il training, il teacher viene scartato: in
+                                produzione non servono frame, non serve una camera; basta fornire il segnale
+                                audio per ottenere la classificazione del suono.
+                            </p>
+                        </div>
+
+                        <div class="bracket-box reveal stagger-2"
+                            style="display: flex; flex-direction: column; justify-content: center; gap: 12px; padding: 20px; min-height: 480px;">
+                            <div class="hud-label">Scenario di Esempio (VGGSound)</div>
+                            <div
+                                style="background: var(--bg-navy); border: 2px solid var(--neon-pink); padding: 12px; border-radius: 6px;">
+                                <div style="text-align: center; margin-bottom: 8px;">
+                                    <div
+                                        style="font-family: var(--font-mono); color: var(--neon-pink); margin-bottom: 4px; font-size: 14px;">
+                                        [TRACCIA AUDIO (STUDENT)]
+                                        &bull;&bull;&bull;&bull;&bull;&bull;&bull;&bull;&bull;&bull; 100%</div>
+                                    <span
+                                        style="font-size: 20px; color: var(--white); font-weight: bold; font-family: var(--font-display);">Suono
+                                        di Ambulanza (Chiarissimo)</span>
+                                </div>
+                                <img src="../figures/slide2_spectrogram.png"
+                                    style="width: 100%; height: 110px; object-fit: cover; border: 1px solid rgba(247, 37, 133, 0.3); border-radius: 4px;"
+                                    alt="Mel Spectrogram">
+                            </div>
+
+                            <div
+                                style="background: var(--bg-navy); border: 2px dashed rgba(10, 120, 116, 0.4); padding: 12px; border-radius: 6px;">
+                                <div style="text-align: center; margin-bottom: 8px;">
+                                    <div
+                                        style="font-family: var(--font-mono); color: var(--neon-cyan); margin-bottom: 4px; font-size: 14px;">
+                                        [FRAME VISIVO (TEACHER) - SFOCATO / NOTTURNO]</div>
+                                    <span
+                                        style="font-size: 17px; font-style: italic; color: var(--soft-lavender);">Strada
+                                        buia, sirena non visibile su schermo</span>
+                                </div>
+                                <img src="../figures/slide2_frame.jpg"
+                                    style="width: 100%; height: 110px; object-fit: cover; border: 1px solid rgba(0, 245, 255, 0.3); border-radius: 4px;"
+                                    alt="Video Frame">
+                            </div>
+
+                            <p
+                                style="font-size: 16px; color: var(--neon-cyan); line-height: 1.35; margin: 10px 0 0 0; text-align: center;">
+                                &rarr; L'audio domina semanticamente. Il Teacher visivo guida lo Student
+                                nell'apprendimento cross-modale.
+                            </p>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- ===========================================
+               SLIDE 3: TASK & DATASET (Speaker A: Denise)
+               =========================================== -->
+            <section class="slide" id="slide3">
+                <div class="speaker-tag">Speaker: Denise</div>
+                <div class="slide-content">
+                    <h2 class="pixel-title reveal">Task, Dataset e Sfide</h2>
+
+                    <div class="grid-2 flex-grow" style="margin-top: 30px;">
+                        <div class="reveal stagger-1">
+                            <div class="label-pill">Task & Dati</div>
+                            <ul class="pixel-list">
+                                <li><strong>Classificazione Audio</strong>: classificazione su un subset selezionato di
+                                    25 classi distinte da VGGSound.</li>
+                                <li><strong>Dataset reale limitato</strong>: 933 campioni di test effettivamente
+                                    validati.</li>
+                                <li><strong>Problema del Link-Rot</strong>: circa il <strong>21%</strong> dei video
+                                    originali non è più scaricabile da YouTube, richiedendo pipeline robuste ed
+                                    esecuzioni locali offline.</li>
+                            </ul>
+                        </div>
+
+                        <div class="reveal stagger-2">
+                            <div class="label-pill pink-text">Sfide Tecnologiche</div>
+
+                            <div class="timeline-rail">
+                                <div class="timeline-item">
+                                    <div class="timeline-node"></div>
+                                    <span class="timeline-date">Modality Mismatch</span>
+                                    <p style="font-size: 22px; margin: 0; color: var(--white); line-height: 1.5;">Il
+                                        Teacher è visivo (elabora un frame statico 2D) mentre lo Student è audio
+                                        (elabora spettrogrammi audio 1D/2D). Allineare i due domini richiede projection
+                                        head dedicati.</p>
+                                </div>
+                                <div class="timeline-item">
+                                    <div class="timeline-node"></div>
+                                    <span class="timeline-date">Isolamento del Cluster</span>
+                                    <p style="font-size: 22px; margin: 0; color: var(--white); line-height: 1.5;">Il
+                                        cluster DMI non ha accesso a Internet e non supporta pacchetti come
+                                        <code>timm</code>. I pesi e i modelli (torchvision) sono stati caricati e
+                                        pre-configurati offline.
+                                    </p>
+                                </div>
+                                <div class="timeline-item">
+                                    <div class="timeline-node"></div>
+                                    <span class="timeline-date">Vincolo di VRAM</span>
+                                    <p style="font-size: 22px; margin: 0; color: var(--white); line-height: 1.5;">
+                                        Memoria GPU allocata stretta (limite di 11GB su gpu-large). Rischio costante di
+                                        Out Of Memory (OOM) gestito con ottimizzazioni mirate del batch size.</p>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- ===========================================
+               SLIDE 4: ARCHITETTURA (Speaker B: Eleonora)
+               =========================================== -->
+            <section class="slide" id="slide4">
+                <div class="speaker-tag">Speaker: Eleonora</div>
+                <div class="slide-content">
+                    <h2 class="pixel-title reveal">Architettura: Teacher + Student</h2>
+
+                    <div class="reveal stagger-1" style="margin-top: 30px; margin-bottom: 40px;">
+                        <div class="arch-diagram">
+                            <!-- VISUAL TEACHER -->
+                            <div class="arch-node teacher">
+                                <div class="stat-label" style="color: var(--neon-pink);">Visual Teacher</div>
+                                <div
+                                    style="font-family: var(--font-display); font-size: 20px; color: var(--white); margin-top: 5px;">
+                                    ResNet-50</div>
+                                <div style="font-size: 11px; color: var(--soft-lavender); margin-top: 4px;">ImageNet
+                                    Pretrained (Frozen)</div>
+                            </div>
+
+                            <!-- FLUSSO TEACHER -->
+                            <div class="arch-arrow" style="color: var(--neon-pink); text-align: center;">
+                                <span
+                                    style="font-size: 10px; display: block; color: rgba(0,0,0,0.7); margin-bottom: 2px; font-family: var(--font-mono);">Logits</span>
+                                <span style="font-size: 24px;">&rarr;</span>
+                            </div>
+
+                            <!-- LOSS ALLINEAMENTO (KL-DIV) -->
+                            <div class="arch-node"
+                                style="border-color: var(--neon-cyan); box-shadow: 4px 4px 0 rgba(0, 0, 0, 0.4);">
+                                <div class="stat-label" style="color: var(--neon-cyan);">Loss Allineamento</div>
+                                <div
+                                    style="font-family: var(--font-display); font-size: 17px; color: var(--white); margin-top: 5px;">
+                                    Logits KL-Div</div>
+                                <div style="font-size: 11px; color: var(--soft-lavender); margin-top: 4px;">+ Feature L2
+                                    Loss</div>
+                            </div>
+
+                            <!-- FLUSSO BRIDGE -->
+                            <div class="arch-arrow" style="color: var(--neon-cyan); text-align: center;">
+                                <span
+                                    style="font-size: 10px; display: block; color: rgba(0,0,0,0.7); margin-bottom: 2px; font-family: var(--font-mono);">Allineati</span>
+                                <span style="font-size: 24px;">&larr;</span>
+                            </div>
+
+                            <!-- PROJECTION BRIDGE -->
+                            <div class="arch-node"
+                                style="border-color: var(--neon-yellow); box-shadow: 4px 4px 0 rgba(0, 0, 0, 0.4);">
+                                <div class="stat-label" style="color: var(--neon-yellow);">Projection Bridge</div>
+                                <div
+                                    style="font-family: var(--font-display); font-size: 17px; color: var(--white); margin-top: 5px;">
+                                    Proj Head (MLP)</div>
+                                <div style="font-size: 11px; color: var(--soft-lavender); margin-top: 4px;">2048 &rarr;
+                                    512 &rarr; student_dim</div>
+                            </div>
+
+                            <!-- FLUSSO STUDENT -->
+                            <div class="arch-arrow" style="color: var(--neon-yellow); text-align: center;">
+                                <span
+                                    style="font-size: 10px; display: block; color: rgba(0,0,0,0.7); margin-bottom: 2px; font-family: var(--font-mono);">Features</span>
+                                <span style="font-size: 24px;">&larr;</span>
+                            </div>
+
+                            <!-- AUDIO STUDENT -->
+                            <div class="arch-node student">
+                                <div class="stat-label" style="color: var(--neon-yellow);">Audio Student</div>
+                                <div
+                                    style="font-family: var(--font-display); font-size: 20px; color: var(--white); margin-top: 5px;">
+                                    AST / CNNs</div>
+                                <div style="font-size: 11px; color: var(--soft-lavender); margin-top: 4px;">
+                                    Mel-Spectrogram Input</div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="grid-2 flex-grow">
+                        <div class="bracket-box reveal stagger-2">
+                            <div class="hud-label">Componenti Chiave</div>
+                            <ul class="pixel-list" style="font-size: 16px;">
+                                <li><strong>Teacher Visivo</strong>: Backbone ResNet-50 preaddestrato su ImageNet,
+                                    congelato (no gradienti) per estrarre logit e feature dal frame centrale del video.
+                                </li>
+                                <li><strong>Student Audio</strong>: Audio Spectrogram Transformer (AST) basato su
+                                    ViT-B/16, addestrato su mel-spettrogrammi 128&times;1024 dell'audio.</li>
+                                <li><strong>Implementazione Propria</strong>: Projection Head MLP
+                                    (2048&rarr;512&rarr;student_dim) e intera pipeline KD cross-modale sono
+                                    implementazioni originali. Stessa architettura per tutti gli student: AST (768),
+                                    EfficientNet-B0 (1280), MobileNetV3-Small (576).</li>
+                            </ul>
+                        </div>
+
+                        <div class="bracket-box pink-corners reveal stagger-3">
+                            <div class="hud-label">Allineamento Cross-Modale</div>
+                            <ul class="pixel-list pink-list" style="font-size: 16px;">
+                                <li><strong>Projection Head MLP (Bridge)</strong>: MLP a due layer
+                                    (Linear&rarr;BN&rarr;ReLU&rarr;Linear) che mappa le feature del Teacher nello spazio
+                                    dello Student. Il layer nascosto introduce non-linearità. Quest'ultima permette un
+                                    adattamento più flessibile tra modalità e architetture eterogenee.</li>
+                                <li><strong>Inferenza Efficiente</strong>: Durante il testing e la produzione, il
+                                    teacher visivo viene rimosso del tutto. Lo student opera come modello
+                                    <strong>audio-only puro</strong> senza overhead.
+                                </li>
+                            </ul>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- ===========================================
+               SLIDE 5: LA LOSS (Speaker B: Eleonora)
+               =========================================== -->
+            <section class="slide" id="slide5">
+                <div class="speaker-tag">Speaker: Eleonora</div>
+                <div class="slide-content">
+                    <h2 class="pixel-title reveal">La Loss di Distillazione</h2>
+
+                    <div class="grid-2 flex-grow"
+                        style="margin-top: 15px; transform: translateY(-15px); grid-template-columns: 4.5fr 5.5fr; gap: 35px; align-items: center;">
+                        <div class="bracket-box yellow-corners reveal stagger-1"
+                            style="display: flex; flex-direction: column; justify-content: center; text-align: center; padding: 24px;">
+                            <div class="label-pill">Formula Globale</div>
+                            <div
+                                style="background: #ffffff; border: 2px solid var(--neon-yellow); padding: 20px; font-family: var(--font-mono); font-size: 24px; color: #111111; font-weight: 600; margin-bottom: 20px; box-shadow: 4px 4px 0 rgba(0,0,0,0.3); border-radius: 4px;">
+                                L<sub>tot</sub> = &alpha;&middot;L<sub>KD</sub> + (1-&alpha;)&middot;L<sub>CE</sub> +
+                                &beta;&middot;L<sub>feat</sub>
+                            </div>
+                            <p style="font-size: 19px; line-height: 1.45; text-align: left; margin: 0;">
+                                La loss totale combina tre contributi per guidare l'apprendimento dello Student: la
+                                Cross-Entropy standard (CE), la Distillazione sui logits (KD) e la regressione delle
+                                feature.
+                            </p>
+                        </div>
+
+                        <div class="reveal stagger-2" style="transform: translateY(0);">
+                            <div class="label-pill cyan-text">I Tre Contributi della Loss</div>
+                            <ul class="pixel-list" style="font-size: 18px; line-height: 1.45;">
+                                <li><strong>L<sub>KD</sub> (Kullback-Leibler)</strong>: Allinea le distribuzioni di
+                                    probabilità morbide (soft labels) tra i logits del teacher e dello student, con una
+                                    <strong>Temperatura T = 4.0</strong> per ammorbidire le curve.
+                                </li>
+                                <li><strong>L<sub>CE</sub> (Cross-Entropy)</strong>: Forza la classificazione corretta
+                                    rispetto alle etichette ground-truth dell'audio.</li>
+                                <li><strong>L<sub>feat</sub> (Mean Squared Error)</strong>: Allinea le feature
+                                    intermedie dello student a quelle del teacher tramite il Projection Head MLP
+                                    (con peso &beta; = 0.3).</li>
+                                <li><strong>Ablation su &alpha;</strong>: Testati valori {0.3, 0.5, 0.7, 0.9}. L'ottimo
+                                    per AST si colloca a <strong>&alpha; = 0.7</strong>.</li>
+                            </ul>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- ===========================================
+               SLIDE 6: ABLATION STUDY ALPHA (Speaker A: Denise)
+               =========================================== -->
+            <section class="slide" id="slide6">
+                <div class="speaker-tag">Speaker: Denise</div>
+                <div class="slide-content">
+                    <h2 class="pixel-title reveal">&alpha;=0.7 Ottimale: Troppa KD Degrada con Teacher Debole</h2>
+
+                    <div class="grid-2 flex-grow" style="margin-top: 30px;">
+                        <div class="reveal stagger-1">
+                            <div class="label-pill">Analisi dei Dati di Ablazione</div>
+                            <p style="font-size: 22px; line-height: 1.5; margin-bottom: 20px; color: var(--white);">
+                                L'iperparametro <strong>&alpha;</strong> controlla il bilanciamento della distillazione
+                                rispetto all'apprendimento supervisionato standard.
+                            </p>
+                            <ul class="pixel-list" style="font-size: 18px;">
+                                <li>Con <strong>&alpha; = 0.7</strong>, lo Student AST raggiunge l'accuratezza ottimale
+                                    del <strong>66.99%</strong> (rispetto al 66.35% della baseline senza distillazione).
+                                </li>
+                                <li>Con <strong>&alpha; = 0.9</strong>, le prestazioni crollano al
+                                    <strong>63.02%</strong>.
+                                </li>
+                                <li><strong>Motivazione</strong>: il Teacher visivo (53.70%) è significativamente più
+                                    debole rispetto alla baseline dello Student audio. Un'influenza eccessiva del
+                                    teacher (&alpha; molto alto) finisce per introdurre rumore e degradare
+                                    l'apprendimento audio.</li>
+                            </ul>
+                        </div>
+
+                        <div class="reveal stagger-2">
+                            <div class="hud-label" style="text-align: center;">Curva di accuratezza su AST (Ablation
+                                Alpha)</div>
+                            <div class="figure-container">
+                                <img src="../figures/ablation_alpha_test.png" alt="Ablation Alpha Plot">
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- ===========================================
+               SLIDE 7: LIGHTWEIGHT CNN BENCHMARK (Speaker A: Denise)
+               =========================================== -->
+            <section class="slide" id="slide7">
+                <div class="speaker-tag">Speaker: Denise</div>
+                <div class="slide-content">
+                    <h2 class="pixel-title reveal">Lightweight CNN Student Benchmark</h2>
+
+                    <div class="grid-2 flex-grow" style="margin-top: 30px;">
+                        <div class="reveal stagger-1">
+                            <div class="label-pill">Motivazione ed Esigenze</div>
+                            <p style="font-size: 25px; line-height: 1.5; color: var(--white);">
+                                L'Audio Spectrogram Transformer (AST) raggiunge ottimi risultati, ma ha un costo
+                                computazionale notevole: <strong>326.8 MB</strong> di dimensione su disco e <strong>5.13
+                                    ms</strong> di latenza per campione.
+                            </p>
+                            <p
+                                style="font-size: 25px; color: var(--neon-cyan); font-weight: bold; line-height: 1.5; margin-top: 15px;">
+                                &rarr; Possiamo usare modelli CNN leggeri adatti all'edge-deployment, riducendo
+                                l'impronta computazionale fino a 20 volte?
+                            </p>
+                            <div class="bracket-box yellow-corners" style="padding: 24px; margin-top: 25px;">
+                                <span
+                                    style="font-family: var(--font-mono); font-size: 20px; color: var(--neon-yellow); font-weight: bold;">Configurazione
+                                    del benchmark:</span>
+                                <p style="font-size: 22px; margin: 8px 0 0 0; line-height: 1.4;">Confronto sistematico
+                                    tra baseline addestrata da zero ed estensione distillata con lo stesso setup di KD
+                                    (con &alpha;=0.3).</p>
+                            </div>
+                        </div>
+
+                        <div class="reveal stagger-2">
+                            <div class="label-pill pink-text">Architetture CNN integrate</div>
+
+                            <div class="grid-2" style="gap: 20px;">
+                                <div class="stat-block" style="border-color: var(--neon-pink); padding: 20px;">
+                                    <div class="stat-number pink" style="font-size: 34px;">EfficientNet-B0</div>
+                                    <div class="stat-label" style="font-size: 18px; color: var(--white);">Model Size:
+                                        15.6 MB</div>
+                                    <p
+                                        style="font-size: 19px; margin: 8px 0 0 0; line-height: 1.4; color: var(--soft-lavender);">
+                                        Alta efficienza basata su compound scaling bilanciato di profondità, larghezza e
+                                        risoluzione.</p>
+                                </div>
+
+                                <div class="stat-block" style="border-color: var(--neon-yellow); padding: 20px;">
+                                    <div class="stat-number yellow" style="font-size: 34px;">MobileNetV3-Small</div>
+                                    <div class="stat-label" style="font-size: 18px; color: var(--white);">Model Size:
+                                        3.6 MB</div>
+                                    <p
+                                        style="font-size: 19px; margin: 8px 0 0 0; line-height: 1.4; color: var(--soft-lavender);">
+                                        Ottimizzata per hardware mobile tramite blocchi hard-swish e
+                                        squeeze-and-excitation.</p>
+                                </div>
+                            </div>
+
+                            <div class="bracket-box" style="margin-top: 20px; padding: 24px;">
+                                <div class="hud-label" style="color: var(--neon-cyan); font-size: 18px;">Pipeline di
+                                    Adattamento Input</div>
+                                <p style="font-size: 22px; margin: 8px 0 0 0; line-height: 1.4; color: var(--white);">
+                                    Il primo strato convoluzionale delle CNN preaddestrate (Conv2d a 3 canali RGB) viene
+                                    sostituito con una versione a 1 canale, inizializzando i nuovi pesi con la media sui
+                                    canali RGB dei pesi ImageNet: accetta direttamente i mel-spettrogrammi mono.
+                                </p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- ===========================================
+               SLIDE 8: TABELLA COMPARATIVA (Speaker B: Eleonora)
+               =========================================== -->
+            <section class="slide" id="slide8">
+                <div class="speaker-tag">Speaker: Eleonora</div>
+                <div class="slide-content">
+                    <h2 class="pixel-title reveal">EfficientNet-B0 Domina: +3.42% Accuracy, 21&times; Meno Peso di AST
+                    </h2>
+
+                    <div class="reveal stagger-1" style="margin-top: 20px;">
+                        <table class="pixel-table">
+                            <thead>
+                                <tr>
+                                    <th>ID</th>
+                                    <th>Modello</th>
+                                    <th>Metodologia</th>
+                                    <th>Top-1 Acc (%)</th>
+                                    <th>Top-5 Acc (%)</th>
+                                    <th>Dimensione (MB)</th>
+                                    <th>Latenza (ms)</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <tr class="highlight">
+                                    <td>EXP-009</td>
+                                    <td>EfficientNet-B0</td>
+                                    <td>Baseline (Solo CE)</td>
+                                    <td>69.77%</td>
+                                    <td>90.14%</td>
+                                    <td>15.6 MB</td>
+                                    <td>2.48 ms</td>
+                                </tr>
+                                <tr>
+                                    <td>EXP-005</td>
+                                    <td>AST (ViT-B/16)</td>
+                                    <td>KD (α = 0.7)</td>
+                                    <td>66.99%</td>
+                                    <td>88.53%</td>
+                                    <td>326.8 MB</td>
+                                    <td>5.14 ms</td>
+                                </tr>
+                                <tr>
+                                    <td>EXP-007</td>
+                                    <td>EfficientNet-B0</td>
+                                    <td>KD (α = 0.3)</td>
+                                    <td>66.77%</td>
+                                    <td>92.93%</td>
+                                    <td>15.6 MB</td>
+                                    <td>2.46 ms</td>
+                                </tr>
+                                <tr>
+                                    <td>EXP-001</td>
+                                    <td>AST (ViT-B/16)</td>
+                                    <td>Baseline (Solo CE)</td>
+                                    <td>66.35%</td>
+                                    <td>85.42%</td>
+                                    <td>326.8 MB</td>
+                                    <td>5.13 ms</td>
+                                </tr>
+                                <tr>
+                                    <td>EXP-008</td>
+                                    <td>MobileNetV3-Small</td>
+                                    <td>KD (α = 0.3)</td>
+                                    <td>62.06%</td>
+                                    <td>89.07%</td>
+                                    <td>3.6 MB</td>
+                                    <td>1.56 ms</td>
+                                </tr>
+                                <tr>
+                                    <td>EXP-010</td>
+                                    <td>MobileNetV3-Small</td>
+                                    <td>Baseline (Solo CE)</td>
+                                    <td>61.84%</td>
+                                    <td>88.42%</td>
+                                    <td>3.6 MB</td>
+                                    <td>1.57 ms</td>
+                                </tr>
+                                <tr style="opacity: 0.6;">
+                                    <td>-</td>
+                                    <td>ResNet-50 (Teacher)</td>
+                                    <td>Visual Only (Frozen)</td>
+                                    <td>53.70%</td>
+                                    <td>77.28%</td>
+                                    <td>90.0 MB</td>
+                                    <td>-</td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+
+                    <div class="grid-3 reveal stagger-2" style="margin-top: 25px;">
+                        <div class="stat-block">
+                            <div class="stat-number" data-target="69.77%">69.77%</div>
+                            <div class="stat-label">Best Top-1 (EfficientNet Baseline)</div>
+                        </div>
+                        <div class="stat-block" style="border-color: var(--neon-pink);">
+                            <div class="stat-number pink" data-target="92.93%">92.93%</div>
+                            <div class="stat-label">Best Top-5 (EfficientNet KD)</div>
+                        </div>
+                        <div class="stat-block" style="border-color: var(--neon-yellow);">
+                            <div class="stat-number yellow" data-target="21x">21x</div>
+                            <div class="stat-label">Diminuzione peso (AST &rarr; EfficientNet)</div>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- ===========================================
+               SLIDE 9: TRADEOFF PLOT (Speaker A: Denise)
+               =========================================== -->
+            <section class="slide" id="slide9">
+                <div class="speaker-tag">Speaker: Denise</div>
+                <div class="slide-content">
+                    <h2 class="pixel-title reveal">Trade-off: Accuracy vs Latency vs Size</h2>
+
+                    <div class="grid-2 flex-grow" style="margin-top: 30px;">
+                        <div class="reveal stagger-1">
+                            <div class="label-pill">Analisi Multidimensionale</div>
+                            <p style="font-size: 22px; line-height: 1.5; margin-bottom: 20px; color: var(--white);">
+                                Lo scatter plot confronta le prestazioni di tutti i modelli considerando tre dimensioni
+                                contemporaneamente: Accuratezza (asse Y), Latenza (asse X) e Dimensione del modello
+                                (dimensione dei cerchi).
+                            </p>
+                            <ul class="pixel-list" style="font-size: 18px;">
+                                <li><strong>Dominio CNN</strong>: EfficientNet-B0 emerge come il modello migliore.
+                                    Supera l'AST Baseline di <strong>+3.42%</strong> in accuratezza, dimezzando la
+                                    latenza (2.48 ms vs 5.13 ms) e pesando 21 volte di meno (15.6 MB vs 326.8 MB).</li>
+                                <li><strong>Vantaggi della Distillazione su Modelli Piccoli</strong>: MobileNetV3-Small
+                                    beneficia del Teacher (+0.22% di Top-1 Acc con KD), raggiungendo il 62.06% a fronte
+                                    di soli 3.6 MB di spazio su disco.</li>
+                                <li><strong>Regolarizzazione</strong>: La distillazione previene l'overfitting su
+                                    MobileNetV3, stabilizzando le distribuzioni di probabilità finali.</li>
+                            </ul>
+                        </div>
+
+                        <div class="reveal stagger-2">
+                            <div class="hud-label" style="text-align: center;">Scatter Plot di Trade-off (Test Set)
+                            </div>
+                            <div class="figure-container">
+                                <img src="../figures/tradeoff_comparison.png" alt="Trade-off Plot">
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- ===========================================
+               SLIDE 10: FAILURE CASES & ANALYSIS (Speaker A/B: Eleonora / Denise)
+               =========================================== -->
+            <section class="slide" id="slide10">
+                <div class="speaker-tag">Speaker: Eleonora / Denise</div>
+                <div class="slide-content">
+                    <h2 class="pixel-title reveal">Teacher Visivo (53.70%): Il Collo di Bottiglia del Sistema</h2>
+
+                    <div class="grid-2 flex-grow" style="margin-top: 30px;">
+                        <div class="bracket-box pink-corners reveal stagger-1">
+                            <div class="hud-label" style="color: var(--neon-pink);">Perché il Teacher Visivo è Debole?
+                                (53.70%)</div>
+                            <ul class="pixel-list pink-list" style="font-size: 16px;">
+                                <li><strong>Dataset Audio-Centrico</strong>: VGGSound raccoglie video in cui il focus è
+                                    il segnale acustico. I frame visivi spesso mostrano contesti irrilevanti o sfocati
+                                    (es. inquadratura fissa su una strada mentre si sente una sirena).</li>
+                                <li><strong>Limiti Temporali del Frame Statico</strong>: Il teacher analizza un singolo
+                                    frame statico centrale, perdendo tutta la dinamica temporale del video.</li>
+                                <li><strong>Ambiguità Visiva</strong>: Errori grossolani di classificazione visiva tra
+                                    strumenti simili (es. violino vs violoncello) che l'audio discrimina invece
+                                    istantaneamente.</li>
+                            </ul>
+                        </div>
+
+                        <div class="bracket-box yellow-corners reveal stagger-2">
+                            <div class="hud-label" style="color: var(--neon-yellow);">Perché EfficientNet Baseline
+                                supera AST?</div>
+                            <ul class="pixel-list yellow-list" style="font-size: 16px;">
+                                <li><strong>Forte Bias Induttivo delle CNN</strong>: Le CNN (come EfficientNet)
+                                    posseggono bias induttivi locali di traslazione e localizzazione spaziale. Sui
+                                    mel-spettrogrammi (che presentano pattern strutturati a bande) questo bias è molto
+                                    efficace.</li>
+                                <li><strong>AST &amp; Data Hunger</strong>: L'architettura Transformer (AST) è priva di
+                                    questi bias e richiede una quantità massiccia di dati per generalizzare
+                                    correttamente. Sul nostro subset ridotto, l'AST soffre la scarsità di campioni
+                                    rispetto a EfficientNet.</li>
+                                <li><strong>Distillazione Degradata su EfficientNet</strong>: KD con &alpha;=0.3 riduce
+                                    le prestazioni di EfficientNet dal 69.77% al 66.77%. Il teacher debole (53.70%)
+                                    funge da forte regolarizzatore negativo.</li>
+                            </ul>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- ===========================================
+               SLIDE 11: CONCLUSIONI (Speaker B: Eleonora & Denise)
+               =========================================== -->
+            <section class="slide" id="slide11">
+                <div class="speaker-tag">Speaker: Eleonora / Denise</div>
+                <div class="slide-content">
+                    <h2 class="pixel-title reveal">Conclusioni e Prossimi Passi</h2>
+
+                    <div class="bracket-box reveal stagger-1"
+                        style="margin-top: 20px; margin-bottom: 24px; border-color: var(--neon-yellow);">
+                        <p
+                            style="font-family: var(--font-display); font-size: 18px; color: var(--neon-yellow); margin: 0; text-align: center; text-shadow: 2px 2px 0 var(--bg-navy);">
+                            &ldquo;La KD cross-modale porta AST da 66.35% a 66.99% (+0.64%) e stabilizza MobileNetV3
+                            (+0.22%), ma il teacher visivo a 53.70% rimane il limite strutturale del sistema.&rdquo;
+                        </p>
+                    </div>
+
+                    <div class="grid-2 flex-grow">
+                        <div class="reveal stagger-2">
+                            <div class="label-pill cyan-text">Key Takeaways</div>
+                            <ul class="pixel-list" style="font-size: 16px;">
+                                <li><strong>Distillazione Selettiva</strong>: KD cross-modale utile su modelli piccoli
+                                    (MobileNetV3: +0.22%) ma controproducente su CNN medie con teacher debole
+                                    (EfficientNet: &minus;3%).</li>
+                                <li><strong>CNN vs ViT</strong>: EfficientNet-B0 (69.77%) supera AST (66.35%) grazie al
+                                    bias induttivo locale sui mel-spettrogrammi in regime a dati limitati.</li>
+                                <li><strong>Edge Deployment</strong>: MobileNetV3-Small (3.6 MB, 1.56 ms) ideale per
+                                    applicazioni real-time a risorse limitate.</li>
+                            </ul>
+                        </div>
+
+                        <div class="reveal stagger-3">
+                            <div class="label-pill"
+                                style="color: var(--neon-yellow); border-color: rgba(168, 111, 0, 0.5);">Sviluppi Futuri
+                            </div>
+                            <ul class="pixel-list yellow-list" style="font-size: 16px;">
+                                <li><strong>Video Transformers</strong>: Teacher visivo 3D multi-frame per catturare la
+                                    dinamica temporale del segnale video.</li>
+                                <li><strong>Teacher Audio Forte</strong>: Distillazione da modelli preaddestrati su
+                                    AudioSet completo per eliminare il mismatch cross-modale.</li>
+                                <li><strong>Dataset Completo</strong>: Full VGGSound per superare la data-hunger di AST
+                                    e validare la scalabilità.</li>
+                            </ul>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- ===========================================
+               SLIDE 12: BACKUP A - CONFUSION MATRIX (Backup / Q&A)
+               =========================================== -->
+            <section class="slide" id="slide12">
+                <div class="speaker-tag">Slide di Backup</div>
+                <div class="slide-content">
+                    <h2 class="pixel-title reveal">Backup A: Confusion Matrix Side-by-Side</h2>
+
+                    <div class="grid-2 flex-grow" style="margin-top: 30px;">
+                        <div class="reveal stagger-1">
+                            <div class="label-pill">Analisi degli Errori</div>
+                            <p style="font-size: 22px; line-height: 1.5; margin-bottom: 20px; color: var(--white);">
+                                Il confronto tra la matrice di confusione di AST Baseline (EXP-001) e AST KD (EXP-005)
+                                evidenzia come l'apporto della distillazione influisca sulla distribuzione degli errori:
+                            </p>
+                            <ul class="pixel-list" style="font-size: 18px;">
+                                <li>La distillazione cross-modale mitiga alcuni errori dovuti a forti somiglianze
+                                    spettrali tra classi acustiche (es. motori ed elettrodomestici).</li>
+                                <li>Il Projection Head MLP forza lo student ad aggregare feature acustiche
+                                    corrispondenti a elementi visivi simili, migliorando la separabilità geometrica
+                                    nello spazio latente.</li>
+                                <li>Tuttavia, rimangono incoerenze dovute a classi con label rumorose o audio debole.
+                                </li>
+                            </ul>
+                        </div>
+
+                        <div class="reveal stagger-2">
+                            <div class="hud-label" style="text-align: center;">Confusion Matrices (EXP-001 vs EXP-005)
+                            </div>
+                            <div class="figure-container">
+                                <img src="../figures/confusion_matrix_comparison.png" alt="Confusion Matrix Comparison">
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- ===========================================
+               SLIDE 13: BACKUP B - TRAINING SETUP (Backup / Q&A)
+               =========================================== -->
+            <section class="slide" id="slide13">
+                <div class="speaker-tag">Slide di Backup</div>
+                <div class="slide-content">
+                    <h2 class="pixel-title reveal">Backup B: Setup del Training ed Iperparametri</h2>
+
+                    <div class="grid-2 flex-grow" style="margin-top: 30px;">
+                        <div class="bracket-box reveal stagger-1">
+                            <div class="hud-label">Iperparametri e Training</div>
+                            <table class="pixel-table" style="font-size: 14px;">
+                                <thead>
+                                    <tr>
+                                        <th>Iperparametro</th>
+                                        <th>Valore</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    <tr>
+                                        <td>Optimizer</td>
+                                        <td>AdamW (wd 5e-4 AST/KD, 1e-4 CNN baseline)</td>
+                                    </tr>
+                                    <tr>
+                                        <td>Learning Rate</td>
+                                        <td>5e-5 (AST/KD), 1e-4 (CNN baseline)</td>
+                                    </tr>
+                                    <tr>
+                                        <td>Scheduler</td>
+                                        <td>CosineAnnealingLR (T_max=25, warmup 5ep)</td>
+                                    </tr>
+                                    <tr>
+                                        <td>Batch Size</td>
+                                        <td>32 (AST), 16 (CNN distill), 32/64 (CNN base)</td>
+                                    </tr>
+                                    <tr>
+                                        <td>Epoche / Early Stop</td>
+                                        <td>30 epoche / patience=7</td>
+                                    </tr>
+                                    <tr>
+                                        <td>Label Smoothing</td>
+                                        <td>0.1 (Cross-Entropy)</td>
+                                    </tr>
+                                    <tr>
+                                        <td>Temperatura (T)</td>
+                                        <td>4.0 (Ammorbidimento logits)</td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                        </div>
+
+                        <div class="bracket-box pink-corners reveal stagger-2">
+                            <div class="hud-label" style="color: var(--neon-pink);">Augmentation & Regolarizzazione
+                            </div>
+                            <p style="font-size: 22px; line-height: 1.5; margin-bottom: 20px; color: var(--white);">
+                                Per combattere l'overfitting dello Student AST e delle CNN sul subset ridotto, sono
+                                stati adottati i seguenti accorgimenti:
+                            </p>
+                            <ul class="pixel-list pink-list" style="font-size: 18px;">
+                                <li><strong>Label Smoothing &amp; Early Stopping</strong>: Label smoothing 0.1 sulla
+                                    Cross-Entropy + early stopping (patience 7, monitor val_top1) e weight decay per
+                                    contenere l'overfitting sul subset ridotto.</li>
+                                <li><strong>Augmentation Immagini (Teacher)</strong>: I frame del teacher usano
+                                    RandomResizedCrop, RandomHorizontalFlip e ColorJitter; lo student audio riceve i
+                                    mel-spettrogrammi senza augmentation.</li>
+                                <li><strong>Feature Projection Head Alignment</strong>: MSE loss (&beta; = 0.3)
+                                    applicata per allineare gli embedding (2048-dim per il Teacher ResNet-50, proiettati
+                                    a 768-dim per AST o 1280/576-dim per le CNN Student).
+                                </li>
+                                <li><strong>Mixed Precision</strong>: Esecuzione in FP16 (AMP) per dimezzare l'impronta
+                                    di VRAM ed evitare crash.</li>
+                            </ul>
+                        </div>
+                    </div>
+                </div>
+            </section>
+        </main>
+    </div>
+
+    <!-- Controlli deck per la presentazione -->
+    <div class="deck-controls">
+        <button id="prevBtn">&larr; PREV</button>
+        <span class="deck-progress-info" id="deckProgress">01 / 13</span>
+        <button id="nextBtn">NEXT &rarr;</button>
+    </div>
+
+    <div class="nav-hint">TASTI &uarr; &darr; / &larr; &rarr; per Navigare</div>
+
+    <!-- Script per la presentazione e l'atmosfera 8-bit -->
+    <script>
+        /* ===========================================
+           SLIDE PRESENTATION CONTROLLER
+           =========================================== */
+        class SlidePresentation {
+            constructor() {
+                this.slides = document.querySelectorAll('.slide');
+                this.currentSlide = 0;
+                this.stage = document.getElementById('deckStage');
+                this.progressInfo = document.getElementById('deckProgress');
+                this.prevBtn = document.getElementById('prevBtn');
+                this.nextBtn = document.getElementById('nextBtn');
+
+                this.setupStageScale();
+                this.setupKeyboardNav();
+                this.setupTouchNav();
+                this.setupClickNav();
+                this.setupWheelNav();
+                this.showSlide(0);
+            }
+
+            setupStageScale() {
+                const scale = () => {
+                    const factor = Math.min(window.innerWidth / 1920, window.innerHeight / 1080);
+                    document.documentElement.style.setProperty('--stage-scale', factor);
+                    const x = (window.innerWidth - 1920 * factor) / 2;
+                    const y = (window.innerHeight - 1080 * factor) / 2;
+                    this.stage.style.transform = `translate(${x}px, ${y}px) scale(${factor})`;
+                };
+                scale();
+                window.addEventListener('resize', scale);
+            }
+
+            setupKeyboardNav() {
+                document.addEventListener('keydown', (e) => {
+                    // Ignora se siamo in modalità edit e stiamo digitando
+                    if (e.target.getAttribute('contenteditable')) return;
+
+                    if (e.key === 'ArrowRight' || e.key === 'ArrowDown' || e.key === ' ') {
+                        e.preventDefault();
+                        this.next();
+                    } else if (e.key === 'ArrowLeft' || e.key === 'ArrowUp') {
+                        e.preventDefault();
+                        this.prev();
+                    } else if (e.key === 'Home') {
+                        e.preventDefault();
+                        this.showSlide(0);
+                    } else if (e.key === 'End') {
+                        e.preventDefault();
+                        this.showSlide(this.slides.length - 1);
+                    }
+                });
+            }
+
+            setupTouchNav() {
+                let startY = 0;
+                let startX = 0;
+                document.addEventListener('touchstart', (e) => {
+                    startY = e.touches[0].clientY;
+                    startX = e.touches[0].clientX;
+                }, false);
+
+                document.addEventListener('touchend', (e) => {
+                    const diffY = e.changedTouches[0].clientY - startY;
+                    const diffX = e.changedTouches[0].clientX - startX;
+
+                    // Rileva swipe orizzontali o verticali stabili (minimo 50px)
+                    if (Math.abs(diffX) > Math.abs(diffY)) {
+                        if (diffX < -50) this.next();
+                        else if (diffX > 50) this.prev();
+                    } else {
+                        if (diffY < -50) this.next();
+                        else if (diffY > 50) this.prev();
+                    }
+                }, false);
+            }
+
+            setupClickNav() {
+                this.prevBtn.addEventListener('click', () => this.prev());
+                this.nextBtn.addEventListener('click', () => this.next());
+            }
+
+            setupWheelNav() {
+                let lastTime = 0;
+                window.addEventListener('wheel', (e) => {
+                    // Evita trigger continui (800ms debounce lock)
+                    const now = Date.now();
+                    if (now - lastTime < 800) return;
+
+                    if (e.deltaY > 20) {
+                        this.next();
+                        lastTime = now;
+                    } else if (e.deltaY < -20) {
+                        this.prev();
+                        lastTime = now;
+                    }
+                });
+            }
+
+            next() {
+                if (this.currentSlide < this.slides.length - 1) {
+                    this.showSlide(this.currentSlide + 1);
+                }
+            }
+
+            prev() {
+                if (this.currentSlide > 0) {
+                    this.showSlide(this.currentSlide - 1);
+                }
+            }
+
+            showSlide(index) {
+                this.currentSlide = Math.max(0, Math.min(index, this.slides.length - 1));
+                this.slides.forEach((slide, i) => {
+                    slide.classList.toggle('active', i === this.currentSlide);
+                    slide.classList.toggle('visible', i === this.currentSlide);
+                });
+
+                // Aggiorna contatore di progresso (formato zero-padded NN)
+                const pad = (n) => n < 10 ? '0' + n : n;
+                this.progressInfo.textContent = `${pad(this.currentSlide + 1)} / ${pad(this.slides.length)}`;
+
+                // Avvia animazione delle statistiche nella Slide 8
+                const activeSlide = this.slides[this.currentSlide];
+                if (activeSlide && activeSlide.id === 'slide8') {
+                    this.animateStatNumbers(activeSlide);
+                }
+            }
+
+            animateStatNumbers(slide) {
+                const statNumbers = slide.querySelectorAll('.stat-number');
+                statNumbers.forEach(el => {
+                    const target = el.getAttribute('data-target');
+                    if (!target) return;
+
+                    let count = 0;
+                    const duration = 20;
+                    const chars = '0123456789%x.';
+
+                    el.textContent = Array.from({ length: target.length }, () => chars[Math.floor(Math.random() * chars.length)]).join('');
+
+                    const interval = setInterval(() => {
+                        const progress = count / duration;
+                        const decodedLength = Math.floor(progress * target.length);
+
+                        let currentStr = target.substring(0, decodedLength);
+                        for (let i = decodedLength; i < target.length; i++) {
+                            currentStr += chars[Math.floor(Math.random() * chars.length)];
+                        }
+
+                        el.textContent = currentStr;
+                        count++;
+
+                        if (count > duration) {
+                            clearInterval(interval);
+                            el.textContent = target;
+                        }
+                    }, 40);
+                });
+            }
+        }
+
+        /* ===========================================
+           INLINE EDITING MODULE
+           =========================================== */
+        class InlineEditor {
+            constructor() {
+                this.isActive = false;
+                this.toggleBtn = document.getElementById('editToggle');
+                this.hotzone = document.querySelector('.edit-hotzone');
+
+                this.setupHotzone();
+                this.setupKeyboard();
+                this.loadSavedContent();
+            }
+
+            setupHotzone() {
+                let hideTimeout = null;
+
+                this.hotzone.addEventListener('mouseenter', () => {
+                    clearTimeout(hideTimeout);
+                    this.toggleBtn.classList.add('show');
+                });
+
+                this.hotzone.addEventListener('mouseleave', () => {
+                    hideTimeout = setTimeout(() => {
+                        if (!this.isActive) this.toggleBtn.classList.remove('show');
+                    }, 400);
+                });
+
+                this.toggleBtn.addEventListener('mouseenter', () => {
+                    clearTimeout(hideTimeout);
+                });
+
+                this.toggleBtn.addEventListener('mouseleave', () => {
+                    hideTimeout = setTimeout(() => {
+                        if (!this.isActive) this.toggleBtn.classList.remove('show');
+                    }, 400);
+                });
+
+                this.hotzone.addEventListener('click', () => this.toggleEditMode());
+                this.toggleBtn.addEventListener('click', () => this.toggleEditMode());
+            }
+
+            setupKeyboard() {
+                document.addEventListener('keydown', (e) => {
+                    // Attiva con il tasto 'e' o 'E', ma solo se non stiamo modificando testo
+                    if ((e.key === 'e' || e.key === 'E') && !e.target.getAttribute('contenteditable')) {
+                        e.preventDefault();
+                        this.toggleEditMode();
+                    }
+                });
+            }
+
+            toggleEditMode() {
+                this.isActive = !this.isActive;
+                this.toggleBtn.classList.toggle('active', this.isActive);
+
+                const editableElements = document.querySelectorAll('h1, h2, h3, h4, p, span, td, th, li');
+
+                editableElements.forEach(el => {
+                    // Escludi elementi di chrome/interfaccia deck
+                    if (el.closest('.deck-controls') || el.closest('.edit-toggle') || el.closest('.nav-hint')) return;
+
+                    if (this.isActive) {
+                        el.setAttribute('contenteditable', 'true');
+                        el.addEventListener('blur', () => this.saveContent());
+                    } else {
+                        el.removeAttribute('contenteditable');
+                    }
+                });
+            }
+
+            saveContent() {
+                const elementsData = [];
+                const editableElements = document.querySelectorAll('[contenteditable]');
+                editableElements.forEach((el, index) => {
+                    elementsData.push({
+                        index: index,
+                        html: el.innerHTML
+                    });
+                });
+                localStorage.setItem('deck_saved_content', JSON.stringify(elementsData));
+            }
+
+            loadSavedContent() {
+                const saved = localStorage.getItem('deck_saved_content');
+                if (saved) {
+                    try {
+                        const elementsData = JSON.parse(saved);
+                        const editableElements = document.querySelectorAll('h1, h2, h3, h4, p, span, td, th, li');
+
+                        // Filtra gli elementi come in toggleEditMode
+                        const validElements = Array.from(editableElements).filter(el => {
+                            return !(el.closest('.deck-controls') || el.closest('.edit-toggle') || el.closest('.nav-hint'));
+                        });
+
+                        elementsData.forEach(data => {
+                            if (validElements[data.index]) {
+                                validElements[data.index].innerHTML = data.html;
+                            }
+                        });
+                    } catch (e) {
+                        console.error("Errore nel ripristinare il contenuto salvato", e);
+                    }
+                }
+            }
+        }
+
+        /* ===========================================
+           AMBIENT EFFECT GENERATORS
+           =========================================== */
+        function generateStarfield() {
+            const container = document.getElementById('starfield');
+            const numStars = 60;
+            const colors = ['', 'pink', 'yellow'];
+
+            for (let i = 0; i < numStars; i++) {
+                const star = document.createElement('div');
+                star.className = 'star ' + colors[Math.floor(Math.random() * colors.length)];
+
+                // Distribuzione casuale
+                star.style.left = Math.random() * 100 + '%';
+                star.style.top = Math.random() * 100 + '%';
+
+                // Dimensione casuale
+                const size = 3 + Math.random() * 4;
+                star.style.width = size + 'px';
+                star.style.height = size + 'px';
+
+                // Twinkling animato
+                star.style.animation = `twinkle ${2 + Math.random() * 3}s infinite ease-in-out`;
+                star.style.animationDelay = Math.random() * 3 + 's';
+
+                container.appendChild(star);
+            }
+        }
+
+        function generateFloatingParticles() {
+            const body = document.body;
+            const numParticles = 12;
+            const colors = ['var(--neon-cyan)', 'var(--neon-pink)', 'var(--neon-yellow)'];
+
+            for (let i = 0; i < numParticles; i++) {
+                const particle = document.createElement('div');
+                particle.className = 'pixel-particle';
+                particle.style.backgroundColor = colors[Math.floor(Math.random() * colors.length)];
+
+                // Proprietà casuali
+                particle.style.left = Math.random() * 100 + '%';
+
+                const size = 6 + Math.random() * 6;
+                particle.style.width = size + 'px';
+                particle.style.height = size + 'px';
+
+                particle.style.animation = `float-up ${6 + Math.random() * 6}s infinite linear`;
+                particle.style.animationDelay = Math.random() * 6 + 's';
+
+                body.appendChild(particle);
+            }
+        }
+
+        function generatePixelLandscape() {
+            const container = document.getElementById('pixelLandscape');
+            const containerWidth = window.innerWidth;
+            const numMountains = 20;
+
+            for (let i = 0; i < numMountains; i++) {
+                const m = document.createElement('div');
+                m.style.position = 'absolute';
+                m.style.bottom = '0';
+
+                // Larghezza e altezza in pixel art
+                const width = 120 + (i % 3) * 60;
+                const height = 40 + (i % 4) * 20;
+                m.style.width = width + 'px';
+                m.style.height = height + 'px';
+
+                // Posizionamento orizzontale uniforme distribuito
+                const left = (i * (containerWidth / numMountains)) - 30;
+                m.style.left = left + 'px';
+
+                // Colore deep navy con L-shadow stilizzato
+                m.style.backgroundColor = 'var(--bg-navy)';
+                m.style.border = '2px solid rgba(94, 220, 244, 0.15)';
+                m.style.borderBottom = 'none';
+
+                container.appendChild(m);
+            }
+        }
+
+        // Boot
+        window.addEventListener('DOMContentLoaded', () => {
+            new SlidePresentation();
+            new InlineEditor();
+            generateStarfield();
+            generateFloatingParticles();
+            generatePixelLandscape();
+        });
+    </script>
+</body>
+
+</html>
