@@ -1,6 +1,9 @@
 # Cross-Modal Knowledge Distillation (Audio → Vision) on VGGSound
 - **Group ID**: Zero e Uno
 - **Project ID**: Track 24
+# Cross-Modal Knowledge Distillation (Audio → Vision) on VGGSound
+- **Group ID**: Zero e Uno
+- **Project ID**: Track 24
 
 ---
 
@@ -12,7 +15,19 @@ Our working hypothesis is that cross-modal supervision regularizes the audio rep
 
 ---
 
+Visual and audio streams in multimedia recordings carry complementary information, yet at inference time the visual channel is often unavailable or too expensive to process. This work studies modality hallucination through cross-modal Knowledge Distillation (KD). The goal is to transfer visual semantic knowledge from a frozen, pre-trained visual teacher (ResNet-50) into an audio-only student network (Audio Spectrogram Transformer, AST), so that the student can implicitly draw on visual context while consuming nothing but audio at deployment.
+
+Our working hypothesis is that cross-modal supervision regularizes the audio representation and yields better generalization than a baseline trained with ordinary cross-entropy on audio labels alone. As the results show, the effect is real but narrow, and the ablation we report below is what makes its boundaries visible.
+
+---
+
 ## 2. Contribution and Added Value
+
+We implement a complete, end-to-end framework for cross-modal distillation on **VGGSound**. To align the two modalities we designed a two-layer MLP projection head ($2048 \to 512 \to 768$, with BatchNorm and ReLU) that maps the intermediate visual features of ResNet-50 into the Transformer embedding space of the AST, minimizing the Mean Squared Error (MSE) between the projected visual features and the audio patch embeddings. On top of this feature-level term we combine a soft Kullback–Leibler (KL) divergence loss with temperature scaling ($T=4.0$) and a standard Cross-Entropy (CE) loss with label smoothing ($0.1$).
+
+We then run an ablation over the interpolation weight $\alpha \in \{0.3, 0.5, 0.7, 0.9\}$ to characterize the trade-off between fitting the ground-truth labels and imitating the teacher's soft distribution. Finally, because VGGSound is sourced from YouTube, we treat link rot as a first-class concern rather than a nuisance: we measure download success rates empirically so that both training and evaluation rest on an honest account of the data that is actually available.
+
+---
 
 We implement a complete, end-to-end framework for cross-modal distillation on **VGGSound**. To align the two modalities we designed a two-layer MLP projection head ($2048 \to 512 \to 768$, with BatchNorm and ReLU) that maps the intermediate visual features of ResNet-50 into the Transformer embedding space of the AST, minimizing the Mean Squared Error (MSE) between the projected visual features and the audio patch embeddings. On top of this feature-level term we combine a soft Kullback–Leibler (KL) divergence loss with temperature scaling ($T=4.0$) and a standard Cross-Entropy (CE) loss with label smoothing ($0.1$).
 
@@ -44,7 +59,53 @@ On the audio side, clips are resampled to 16 kHz and converted to log-mel spectr
 
 ---
 
+We work with a subset of **25 classes** from the VGGSound dataset, drawn from categories that originally provided a balanced setup of 1000 training clips and 50 test clips per class.
+
+> **Exploratory Data Analysis.** The full dataset statistics, selection criteria, link-rot analysis, and modality inspections are documented in the accompanying interactive Jupyter notebooks:
+> * **[01_dataset_exploration.ipynb](../notebooks/01_dataset_exploration.ipynb)**: full VGGSound exploration and the reasoning behind the 25-class selection.
+> * **[02_downloaded_subset_exploration.ipynb](../notebooks/02_downloaded_subset_exploration.ipynb)**: theoretical subset balance, post-download link-rot success rates, and stratified splits.
+> * **[03_audio_visual_inspection.ipynb](../notebooks/03_audio_visual_inspection.ipynb)**: mel-spectrogram extraction, waveforms, and visual-frame RGB statistics.
+
+### Link-Rot and Real Dataset Statistics
+
+YouTube link rot (removed videos, private channels) erodes the usable material. The final dataset comprises **20,672 valid clips**, a download success rate of 78.7%, amounting to roughly 6.6 GB of audio and 40 GB of video frames. The loss is not uniform across classes. The class *chicken crowing* was hit hardest, falling to 646 clips, which is $3.6\sigma$ below the mean ($\mu=826.88$, $\sigma=50.40$); the remaining classes stay tightly balanced, with success rates clustered between 75% and 84% (coefficient of variation 6.1%).
+
+We partition the surviving data with stratification:
+- **Train (85%)**: ~16,800 clips (~670 per class), used for optimization.
+- **Validation (15%)**: ~3,000 clips (~119 per class), used for early stopping and hyperparameter tuning.
+- **Test**: **933 blind clips** (~37 per class), held out strictly for the final evaluation.
+
+### Preprocessing and Augmentation
+
+On the audio side, clips are resampled to 16 kHz and converted to log-mel spectrograms ($N_{\text{fft}}=1024$, window length 400, hop length 160, $128$ mel bins), giving inputs of shape $(1, 128, 1024)$. On the video side, frames are normalized to ImageNet statistics and cropped to $(3, 224, 224)$; during training the teacher additionally sees RandomResizedCrop, RandomHorizontalFlip, and ColorJitter, while the audio student receives spectrograms without augmentation.
+
+---
+
 ## 4. Methodology and Architecture
+
+The pipeline comprises three models, summarized in the diagram below.
+
+```mermaid
+graph TD
+    V[Video Frame] -->|Augmentation| VT[ResNet-50 Teacher - Frozen]
+    A[Audio Spectrogram] --> AST[AST Student - Trainable]
+    VT -->|Intermediate Features 2048| Proj[MLP Projection Head]
+    VT -->|Soft Logits| KD[KL Div Loss]
+    AST -->|Embeddings 768| FeatLoss[MSE Feature Loss]
+    Proj -->|Projected Features 768| FeatLoss
+    AST -->|Logits| KD
+    AST -->|Logits| CELoss[Cross-Entropy Loss]
+```
+
+The teacher (EXP-002) is a ResNet-50 pre-trained on ImageNet, with its classification head replaced to predict 25 classes and fine-tuned with SGD on video frames by unfreezing layers 3, 4 and the FC head. The audio baseline (EXP-001) is an Audio Spectrogram Transformer initialized from ViT-B/16 weights, with $16 \times 16$ patches and position embeddings bilinearly interpolated to accept spectrogram inputs; it is trained from scratch with AdamW and cosine annealing.
+
+The distilled student (EXP-003 to EXP-006) is the same AST, supervised jointly by the ground-truth labels and the frozen teacher through the total loss
+
+$$\mathcal{L}_{\text{total}} = (1 - \alpha) \mathcal{L}_{\text{CE}} + \alpha T^2 \mathcal{L}_{\text{KL}} + \beta \mathcal{L}_{\text{MSE}}$$
+
+with $T=4.0$, $\beta=0.3$, and $\alpha$ ablated. The teacher is kept frozen in `eval()` mode throughout, so no gradient ever flows back into the visual branch.
+
+---
 
 The pipeline comprises three models, summarized in the diagram below.
 
